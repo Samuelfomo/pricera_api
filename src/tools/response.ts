@@ -1,16 +1,24 @@
 import { Response } from 'express';
 
-import HttpStatus from './httpStatus';
+import HttpStatus from '../tools/http-status';
 
 export default class R {
   /**
    * Handle successful JSON response
    */
-  static handleSuccess(res: Response, httpCode: number, structure: object): void {
+  static handleSuccess(
+    res: Response,
+    structure: object,
+    httpCode: number = HttpStatus.SUCCESS
+  ): void {
     res.status(httpCode).json({
       status: true,
       response: structure,
     });
+  }
+
+  static handleCreated(res: Response, structure: object): void {
+    this.handleSuccess(res, structure, HttpStatus.CREATED);
   }
 
   /**
@@ -26,7 +34,7 @@ export default class R {
     });
   }
 
-  static noContent(res: Response): void {
-    res.status(HttpStatus.httpStatusNoContent);
+  static handleNoContent(res: Response): void {
+    res.status(HttpStatus.NO_CONTENT);
   }
 }

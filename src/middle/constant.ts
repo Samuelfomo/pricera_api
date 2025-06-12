@@ -1,6 +1,8 @@
+import { SignOptions } from 'jsonwebtoken';
+
 interface TokenConfig {
   secret: string;
-  expiresIn: string;
+  expiresIn: SignOptions['expiresIn'];
 }
 
 interface AppConfig {
@@ -15,7 +17,7 @@ interface Constant {
   config: AppConfig;
 }
 
-const constant: Constant = {
+export default {
   token: {
     secret: '11P22R33I44C55E666R777A8A9P0I',
     expiresIn: '24h',
@@ -26,9 +28,7 @@ const constant: Constant = {
     appCode: '11235@677P',
     identified: null,
   },
-};
-
-export default constant;
+} as Constant;
 
 // const constant = {
 //   token: {
