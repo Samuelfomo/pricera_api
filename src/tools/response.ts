@@ -24,13 +24,10 @@ export default class R {
   /**
    * Handle error JSON response
    */
-  static handleError(res: Response, httpCode: number, message: string, code: string | null): void {
+  static handleError(res: Response, httpCode: number, error: object): void {
     res.status(httpCode).json({
       status: false,
-      error: {
-        code: code ?? '',
-        message: message,
-      },
+      error: error,
     });
   }
 

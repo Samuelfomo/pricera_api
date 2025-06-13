@@ -7,6 +7,7 @@ import { SignOptions, JwtPayload } from 'jsonwebtoken';
 import R from '../tools/response';
 import HttpStatus from '../tools/http-status';
 import Constant from './constant';
+import G from '../tools/glossary';
 
 interface AuthenticatedRequest extends Request {
   user?: string | JwtPayload;
@@ -16,19 +17,21 @@ export default class Auth {
   static async verify(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return R.handleError(
-        res,
-        HttpStatus.UNAUTHORIZED,
-        `le token est requis`,
-        `authorization_required`
-      );
+      return R.handleError(res, HttpStatus.UNAUTHORIZED, G.tokenIsRequired);
     }
     const token = authHeader.split(' ')[1];
     try {
       req.user = jwt.verify(token, Constant.token.secret);
+
+      if (!req.user) {
+        return R.handleError(res, HttpStatus.UNAUTHORIZED, G.authenticationFailed);
+      }
+
+      console.log(req.user);
+
       next();
     } catch (error: any) {
-      return R.handleError(res, HttpStatus.FORBIDDEN, error.message, `invalid_token`);
+      return R.handleError(res, HttpStatus.FORBIDDEN, { code: error.code, message: error.message });
     }
   }
 
@@ -106,48 +109,28 @@ export default class Auth {
       const uuid: string = crypto.randomUUID();
 
       if (!uuid) {
-        return R.handleError(
-          res,
-          HttpStatus.BAD_REQUEST,
-          `échec de la generation du UUID`,
-          `uuid_generator_failed`
-        );
+        return R.handleError(res, HttpStatus.BAD_REQUEST, G.UUIDGeneratorFailed);
       }
 
       return R.handleSuccess(res, { uuid: uuid });
     } catch (error: any) {
-      return R.handleError(res, HttpStatus.INTERNAL_ERROR, error.message, 'Internal_server_error');
+      return R.handleError(res, HttpStatus.INTERNAL_ERROR, error.message);
     }
   }
 
   static async generateToken(req: Request, res: Response): Promise<void> {
     if (!req.body) {
-      return R.handleError(
-        res,
-        HttpStatus.BAD_REQUEST,
-        `le cors de la requête est requis`,
-        `missing_required_body`
-      );
+      return R.handleError(res, HttpStatus.BAD_REQUEST, G.requestBodyRequired);
     }
     const { version, name, appCode, identified } = req.body;
 
     try {
       if (!version || !name || !appCode || !identified) {
-        return R.handleError(
-          res,
-          HttpStatus.BAD_REQUEST,
-          `Les entrees sont requises`,
-          `missing_required_fields`
-        );
+        return R.handleError(res, HttpStatus.BAD_REQUEST, G.missingRequired);
       }
 
       if (typeof name !== 'string' || !name.trim()) {
-        return R.handleError(
-          res,
-          HttpStatus.BAD_REQUEST,
-          `Le nom ne peut pas être vide`,
-          `invalid_name_field`
-        );
+        return R.handleError(res, HttpStatus.BAD_REQUEST, G.missingRequired);
       }
 
       if (
@@ -155,12 +138,7 @@ export default class Auth {
         name.trim() !== Constant.config.name ||
         appCode !== Constant.config.appCode
       ) {
-        return R.handleError(
-          res,
-          HttpStatus.UNAUTHORIZED,
-          `Accès non autorisé`,
-          `client_authorization_refused`
-        );
+        return R.handleError(res, HttpStatus.UNAUTHORIZED, G.unauthorizedAccess);
       }
 
       const userData = req.body;
@@ -176,7 +154,7 @@ export default class Auth {
 
       return R.handleSuccess(res, { token: jwt.sign(payload, secret, options) });
     } catch (error: any) {
-      return R.handleError(res, HttpStatus.INTERNAL_ERROR, error.message, `internal_server_error`);
+      return R.handleError(res, HttpStatus.INTERNAL_ERROR, error.message);
     }
   }
 }

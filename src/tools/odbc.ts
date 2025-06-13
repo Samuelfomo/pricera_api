@@ -36,6 +36,18 @@ export default class Db {
     // Vérifier la connexion lors de l'initialisation
     this.testConnection();
   }
+
+  /**
+   * Get Sequelize instance
+   */
+  getInstance(): Sequelize {
+    // if (!this._isConnected) {
+    //   console.warn("⚠️  Attention: La connexion à la base de données n'est pas établie");
+    //   return false;
+    // }
+    return this._sequelize;
+  }
+
   /**
    * Teste la connexion à la base de données
    */
@@ -68,17 +80,6 @@ export default class Db {
   }
 
   /**
-   * Get Sequelize instance
-   */
-  getInstance(): Sequelize | null {
-    if (!this._isConnected) {
-      console.warn("⚠️  Attention: La connexion à la base de données n'est pas établie");
-      return null;
-    }
-    return this._sequelize;
-  }
-
-  /**
    * Reconnecter à la base de données
    */
   async reconnect(): Promise<void> {
@@ -106,6 +107,7 @@ export default class Db {
   }
 
   async getDatabaseInfos(): Promise<string> {
+    await this.testConnection();
     if (!this._isConnected) {
       throw new Error('Connexion à la base de données non établie');
     }
