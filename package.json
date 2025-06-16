@@ -3,9 +3,11 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
+    "testCreateClient": "npx ts-node scripts/manageClient.ts",
     "test": "echo \"Error: no test specified\" && exit 1",
     "dev": "ts-node app.ts",
-    "build": "tsc",
+    "clean": "rimraf dist",
+    "build": "npm run clean && tsc",
     "start": "npm run build && node dist/app.js",
     "lint": "eslint . --ext .ts",
     "format": "prettier --write ."
@@ -23,7 +25,8 @@
     "eslint": "^9.28.0",
     "eslint-config-prettier": "^10.1.5",
     "eslint-plugin-import": "^2.31.0",
-    "prettier": "^3.5.3"
+    "prettier": "^3.5.3",
+    "rimraf": "^6.0.1"
   },
   "dependencies": {
     "@sequelize/postgres": "^7.0.0-alpha.46",

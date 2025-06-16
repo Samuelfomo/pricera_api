@@ -1,111 +1,107 @@
 import express from 'express';
-import cors from 'cors';
 
-import Auth from './src/middle/auth';
-import Db from './src/tools/odbc';
+import ClientModel from './src/model/ClientModel';
+import Db from './src/tools/database';
 
-const app = express();
-// const host = '192.168.100.103';
-const host = '127.0.0.1';
-const port = 3000;
+class App {
+  private server: any;
+  private app: express.Application;
+  private port: number;
+  private clientModel: ClientModel;
 
-app.use(cors());
-app.use(express.json());
-
-/**
- * Initialise toutes les tables de la base de données
- */
-async function initializeTables() {
-  try {
-    console.log('🗄️  Starting database tables initialization...');
-
-    console.log('✅ Odbc tables initialized successfully');
-    return true;
-  } catch (error: any) {
-    console.error('❌ Failed to initialize database tables:', error);
-    throw new Error(`Database initialization failed: ${error.message}`);
+  constructor(port: number = 3000) {
+    this.port = port;
+    this.app = express();
+    this.clientModel = new ClientModel();
+    this.setupMiddleware();
+    this.setupRoutes();
   }
-}
 
-/**
- * Fonction principale d'initialisation
- */
-async function main() {
-  try {
-    console.log('🚀 Starting application initialization...');
-
-    await initializeTables();
-
-    console.log('✅ Odbc and models initialized successfully');
-    console.log('🎯 Application ready to handle requests');
-
-    await initializeRoutes();
-  } catch (error: any) {
-    console.error('❌ Failed to initialize application:', error);
-    process.exit(1);
+  private setupMiddleware(): void {
+    this.app.use(express.json());
+    this.app.use(express.urlencoded({ extended: true }));
   }
-}
 
-/**
- * Initialise les routes
- */
-async function initializeRoutes() {
-  try {
-    console.log('📍 Initializing routes...');
-
-    app.post('/token/get', Auth.generateToken);
-
-    app.post('/terminal/identified', async (req, res) => {
-      await Auth.generateUUID(res);
+  private setupRoutes(): void {
+    this.app.get('/health', (req, res) => {
+      res.json({ status: 'OK', timestamp: new Date().toISOString() });
     });
 
-    // Route de santé (health check)
-    app.get('/health', (req, res) => {
-      res.json({
-        status: 'OK',
-        timestamp: new Date().toISOString(),
-        uptime: process.uptime(),
-        message: 'Server is running successfully',
+    this.app.get('/', (req, res) => {
+      res.json({ message: 'API Server is running' });
+    });
+  }
+
+  async start(): Promise<void> {
+    try {
+      // // Initialiser la base de données
+      // console.log('🔌 Connecting to database...');
+      // const isConnected = await this.clientModel.isConnected();
+      // if (!isConnected) {
+      //   throw new Error('Database connection failed');
+      // }
+      // Initialiser la connexion singleton
+      await Db.initialize();
+      console.log('✅ Database connected');
+
+      // Initialiser les modèles
+      console.log('📋 Initializing models...');
+      await this.clientModel.init();
+      console.log('✅ Models initialized');
+
+      // Démarrer le serveur
+      console.log(`🚀 Starting server on port ${this.port}...`);
+      this.server = this.app.listen(this.port, () => {
+        console.log(`✅ Server running on http://localhost:${this.port}`);
       });
-    });
 
-    console.log('✅ Routes initialized successfully');
-  } catch (error) {
-    console.error('❌ Failed to initialize routes:', error);
-    throw error;
+      // Gérer l'arrêt propre
+      this.setupGracefulShutdown();
+    } catch (error) {
+      console.error('❌ Failed to start server:', error);
+      process.exit(1);
+    }
+  }
+
+  private setupGracefulShutdown(): void {
+    const shutdown = async (signal: string) => {
+      console.log(`\n📡 Received ${signal}. Starting graceful shutdown...`);
+
+      if (this.server) {
+        console.log('🔌 Closing HTTP server...');
+        this.server.close(() => {
+          console.log('✅ HTTP server closed');
+        });
+      }
+
+      try {
+        console.log('💾 Closing database connection...');
+        // await this.clientModel.close();
+        // console.log('✅ Database connection closed');
+
+        // Fermer proprement la connexion singleton
+        await Db.closeConnection();
+        console.log('🔌 Connexion fermée proprement');
+      } catch (error) {
+        console.error('❌ Error closing database:', error);
+      }
+
+      console.log('👋 Goodbye!');
+      process.exit(0);
+    };
+
+    process.on('SIGTERM', () => shutdown('SIGTERM'));
+    process.on('SIGINT', () => shutdown('SIGINT'));
   }
 }
 
-main()
-  .then(() => {
-    app.listen(port, host, () => {
-      console.log(`🌐 Server running on http://${host}:${port}`);
-      console.log(`📊 Health check available at: http://${host}:${port}/health`);
-      console.log('🎉 Server ready to handle requests!');
-      // testDatabaseConnection();
-
-      let sequelize = new Db();
-      sequelize
-        .getDatabaseInfos()
-        .then((data) => {
-          console.log(`😤 Database test connection: ${data}`);
-        })
-        .catch((err) => {
-          console.error('❌ Erreur BDD:', err);
-        });
-    });
-  })
-  .catch((error) => {
-    console.error('❌ Failed to start server:', error);
+// Démarrer l'application
+if (require.main === module) {
+  const app = new App(process.env.PORT ? parseInt(process.env.PORT) : 3000);
+  app.start().catch((error) => {
+    console.error('❌ Application failed to start:', error);
     process.exit(1);
   });
+}
 
-// async function testDatabaseConnection() {
-//   const sequelize = new Db();
-//   try {
-//     const data = await sequelize.getDatabaseInfos();
-//     console.log(`😤 Database test connection: ${data}`);
-//   } catch (err) {
-//     console.error('❌ Erreur de connexion BDD :', err);
-//   }
-// }
+export default App;
