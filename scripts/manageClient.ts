@@ -2,7 +2,6 @@ import * as readline from 'readline';
 
 import Client from '../src/class/Client';
 import Db from '../src/tools/database';
-import { ClientModel } from '../src/model/ClientModel';
 
 class ClientManager {
   private rl: readline.Interface;
@@ -67,18 +66,16 @@ class ClientManager {
       // Créer le client
       console.log('\n⏳ Création du client...');
 
-      const modelC = new ClientModel();
-      const woupo = new Client().setName(appName).setSecret(secret);
-      await woupo.save();
+      const client = new Client().setName(appName).setSecret(secret);
+      await client.save();
 
       console.log('\n✅ Client créé avec succès!');
       console.log('📋 Détails:');
-      console.log(`   - ID: ${woupo.getId()}`);
-      console.log(`   - Nom: ${woupo.getName()}`);
-      console.log(`   - Token: ${woupo.getToken()}`);
+      console.log(`   - ID: ${client.getId()}`);
+      console.log(`   - Nom: ${client.getName()}`);
+      console.log(`   - Token: ${client.getToken()}`);
 
       console.log(`-`.repeat(50));
-      console.log(modelC.toString());
     } catch (error) {
       console.log('\n❌ Erreur:', error);
     }
@@ -361,7 +358,7 @@ class ClientManager {
     console.log('6. Tester la connexion DB');
     console.log('7. Quitter');
 
-    const choice = await this.question('\nVotre choix (1-7): ');
+    const choice = await this.question('\nVotre choix (1-6): ');
 
     switch (choice) {
       case '1':
@@ -384,15 +381,15 @@ class ClientManager {
         await this.toggleActivationClient();
         await this.showMenu();
         break;
-      case '6':
-        await this.testConnection();
-        await this.showMenu();
-        break;
+      // case '6':
+      //   await this.testConnection();
+      //   await this.showMenu();
+      //   break;
       // case '7':
       //   await this.testConnection();
       //   await this.showMenu();
       //   break;
-      case '7':
+      case '6':
         console.log('\n👋 Au revoir!');
         break;
       default:
@@ -402,22 +399,22 @@ class ClientManager {
     }
   }
 
-  async testConnection(): Promise<void> {
-    console.log('\n🔌 === Test de connexion ===\n');
-
-    try {
-      const db = Db.getInstance();
-      const isConnected = await db.isConnected();
-
-      if (isConnected) {
-        console.log('✅ Connexion à la base de données OK');
-      } else {
-        console.log('❌ Problème de connexion à la base de données');
-      }
-    } catch (error) {
-      console.log('❌ Erreur lors du test de connexion:', error);
-    }
-  }
+  // async testConnection(): Promise<void> {
+  //   console.log('\n🔌 === Test de connexion ===\n');
+  //
+  //   try {
+  //     const db = Db.getInstance();
+  //     const isConnected = await db.isConnected();
+  //
+  //     if (isConnected) {
+  //       console.log('✅ Connexion à la base de données OK');
+  //     } else {
+  //       console.log('❌ Problème de connexion à la base de données');
+  //     }
+  //   } catch (error) {
+  //     console.log('❌ Erreur lors du test de connexion:', error);
+  //   }
+  // }
 
   async start(): Promise<void> {
     try {
@@ -425,10 +422,10 @@ class ClientManager {
       // const clientModel = new ClientModel();
       // await clientModel.init();
 
-      console.log('✅ Modèles initialisé');
-
-      await Db.initialize();
-      console.log('✅ Connexion initialisée');
+      // console.log('✅ Modèles initialisé');
+      //
+      // await Db.initialize();
+      // console.log('✅ Connexion initialisée');
 
       // Afficher le menu
       await this.showMenu();

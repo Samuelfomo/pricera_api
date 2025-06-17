@@ -1,18 +1,15 @@
 import express from 'express';
 
-import ClientModel from './src/model/ClientModel';
 import Db from './src/tools/database';
 
 class App {
   private server: any;
   private app: express.Application;
   private port: number;
-  private clientModel: ClientModel;
 
   constructor(port: number = 3000) {
     this.port = port;
     this.app = express();
-    this.clientModel = new ClientModel();
     this.setupMiddleware();
     this.setupRoutes();
   }
@@ -41,12 +38,12 @@ class App {
       //   throw new Error('Database connection failed');
       // }
       // Initialiser la connexion singleton
-      await Db.initialize();
+      // await Db.initialize();
       console.log('✅ Database connected');
 
       // Initialiser les modèles
       console.log('📋 Initializing models...');
-      await this.clientModel.init();
+
       console.log('✅ Models initialized');
 
       // Démarrer le serveur

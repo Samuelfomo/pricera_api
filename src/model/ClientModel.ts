@@ -4,15 +4,15 @@ import { ApiKeyManager } from '../tools/api-key-manager';
 import Db from '../tools/database';
 import W from '../tools/watcher';
 
-export abstract class ClientModel {
+export default abstract class ClientModel extends Db {
   public readonly db = {
-    tableName: 'xf_client',
+    tableName: 'xf_clients',
     id: 'id',
     name: 'name',
     token: 'token',
     secret: 'secret',
     active: 'active',
-  };
+  } as const;
 
   protected id?: number;
   protected name?: string;
@@ -20,21 +20,30 @@ export abstract class ClientModel {
   protected secret?: string;
   protected active?: boolean;
 
-  // Instance de la base de données singleton
-  protected dbInstance: Db;
-
-  constructor() {
-    // Récupération de l'instance singleton au lieu de créer une nouvelle connexion
-    this.dbInstance = Db.getInstance();
+  protected constructor() {
+    super();
     this.initModel();
   }
 
   async init(): Promise<void> {
-    // Initialisation de la connexion singleton si pas encore fait
-    await Db.initialize();
-    // this.initModel();
-    await this.dbInstance.syncModel(this.db.tableName);
+    // await this.initialize();
+    await this.syncModel(this.db.tableName);
   }
+  // async init(): Promise<void> {
+  //   try {
+  //     // Étape 1: S'assurer que la connexion DB est établie
+  //     await this.initialize();
+  //
+  //     // Étape 2: Initialiser le modèle APRÈS la connexion
+  //     this.initModel();
+  //     await this.syncModel(this.db.tableName);
+  //
+  //     console.log(`✅ Modèle '${this.db.tableName}' initialisé avec succès`);
+  //   } catch (error) {
+  //     console.error(`❌ Erreur lors de l'initialisation du modèle:`, error);
+  //     throw error;
+  //   }
+  // }
 
   private initModel() {
     const attributes = {
@@ -68,8 +77,11 @@ export abstract class ClientModel {
         comment: 'Active',
       },
     };
+    const options = {
+      timestamps: true,
+    };
 
-    this.dbInstance.defineModel(this.db.tableName, attributes);
+    this.defineModel(this.db.tableName, attributes, options);
   }
 
   private async generateUUID(secret: string): Promise<string> {
@@ -77,29 +89,29 @@ export abstract class ClientModel {
   }
 
   protected async find(id: number): Promise<any> {
-    return await this.dbInstance.findOne(this.db.tableName, {
+    return await this.findOne(this.db.tableName, {
       [this.db.id]: id,
     });
   }
 
-  // Nouvelle méthode findAll
-  protected async findAll(conditions: Record<string, any> = {}): Promise<any[]> {
-    return await this.dbInstance.findAll(this.db.tableName, conditions);
+  // Nouvelle méthode findAllClient
+  protected async findAllClient(conditions: Record<string, any> = {}): Promise<any[]> {
+    return await this.findAll(this.db.tableName, conditions);
   }
 
   protected async findByToken(token: string): Promise<any> {
-    return await this.dbInstance.findOne(this.db.tableName, {
+    return await this.findOne(this.db.tableName, {
       [this.db.token]: token,
     });
   }
 
   protected async findByName(name: string): Promise<any> {
-    return await this.dbInstance.findOne(this.db.tableName, { [this.db.name]: name });
+    return await this.findOne(this.db.tableName, { [this.db.name]: name });
   }
 
   // Nouvelle méthode deleted
   protected async deleted(id: number): Promise<boolean> {
-    return await this.dbInstance.deleteOne(this.db.tableName, { [this.db.id]: id });
+    return await this.deleteOne(this.db.tableName, { [this.db.id]: id });
     // console.log(`🗑️  Suppression du client ID ${id}: ${deletedRows} ligne(s) supprimée(s)`);
     // return deletedRows > 0;
   }
@@ -111,14 +123,14 @@ export abstract class ClientModel {
       throw new Error(`No client found`);
     }
     this.active = client.active;
-    return await this.dbInstance.updateOne(
+    return await this.updateOne(
       this.db.tableName,
       { [this.db.active]: !this.active },
       { [this.db.id]: id }
     );
   }
 
-  async createToken(token: string, attempt: number = 1): Promise<string> {
+  private async createToken(token: string, attempt: number = 1): Promise<string> {
     const existing = await this.findByToken(token);
     if (existing) {
       if (attempt > 10) {
@@ -135,7 +147,7 @@ export abstract class ClientModel {
     return token;
   }
 
-  async create(): Promise<any> {
+  protected async create(): Promise<any> {
     await this.validate();
     let token = await this.generateUUID(this.secret ?? '');
     console.log(
@@ -144,7 +156,7 @@ export abstract class ClientModel {
     await W.isOccur(!token, 'Token is not generated');
 
     const tokenPart = await this.createToken(token.split('.')[0], 3);
-    const lastID = await this.dbInstance.insertOne(this.db.tableName, {
+    const lastID = await this.insertOne(this.db.tableName, {
       [this.db.name]: this.name,
       [this.db.token]: tokenPart,
       [this.db.secret]: this.secret,
@@ -156,7 +168,7 @@ export abstract class ClientModel {
     }
   }
 
-  async update(): Promise<any> {
+  protected async update(): Promise<any> {
     await this.validate();
     await W.isOccur(!this.id, 'Client ID is required for update');
     const updateData: Record<string, any> = {};
@@ -171,7 +183,7 @@ export abstract class ClientModel {
     //   let token = await this.generateUUID(this.secret);
     //   updateData[this.db.token] = await this.createToken(token.split('.')[0], 1);
     // }
-    return await this.dbInstance.updateOne(this.db.tableName, updateData, {
+    return await this.updateOne(this.db.tableName, updateData, {
       [this.db.id]: this.id!,
     });
   }

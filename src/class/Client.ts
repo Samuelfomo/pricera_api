@@ -1,6 +1,6 @@
 import W from '../tools/watcher';
 import { ApiKeyManager } from '../tools/api-key-manager';
-import { ClientModel } from '../model/ClientModel';
+import ClientModel from '../model/ClientModel';
 
 export default class Client extends ClientModel {
   constructor() {
@@ -117,9 +117,9 @@ export default class Client extends ClientModel {
   /**
    * Récupère tous les clients selon des conditions optionnelles
    */
-  async findAll(conditions: Record<string, any> = {}): Promise<Client[]> {
+  async findAllClients(conditions: Record<string, any> = {}) {
     try {
-      const dataList = await super.findAll(conditions);
+      const dataList = await this.findAllClient(conditions);
       console.log(`📋 ${dataList.length} client(s) trouvé(s)`);
 
       return dataList.map((data) => Client.fromData(data));
@@ -200,7 +200,7 @@ export default class Client extends ClientModel {
   static async getAllClients(): Promise<Client[]> {
     try {
       const instance = new Client();
-      return await instance.findAll();
+      return await instance.findAllClients();
     } catch (error) {
       console.error('❌ Erreur lors de la récupération de tous les clients:', error);
       return [];
@@ -257,11 +257,12 @@ export default class Client extends ClientModel {
       console.log(
         `🔑 Token généré - API Key: ${fullToken.split('.')[0]} | API Secret: ${fullToken.split('.')[1]}`
       );
-      const apiKey = fullToken.split('.')[0];
+      return fullToken.split('.')[0];
+      // const apiKey = fullToken.split('.')[0];
 
-      // Créer une instance temporaire pour accéder aux méthodes protected
-      const instance = new Client();
-      return await instance.createToken(apiKey.split('.')[0], 1);
+      // // Créer une instance temporaire pour accéder aux méthodes protected
+      // const instance = new Client();
+      // return await instance.this.createToken(apiKey.split('.')[0], 1);
     } catch (error) {
       console.error(`❌ Erreur lors de la génération du token:`, error);
       return null;
