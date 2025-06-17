@@ -1,524 +1,200 @@
+// src/tools/database.ts - Version simplifiée et nettoyée
 import { Sequelize, Model, ModelStatic } from 'sequelize';
 import { config } from 'dotenv';
+
 config();
 
-export default abstract class Db {
+export default class Db {
   private static readonly DB_NAME: string = process.env.DB_NAME!;
   private static readonly DB_PASSWORD: string = process.env.DB_PASSWORD!;
   private static readonly DB_USERNAME: string = process.env.DB_USERNAME!;
   private static readonly DB_HOST: string = process.env.DB_HOST!;
   private static readonly DB_PORT: number = Number(process.env.DB_PORT!);
 
-  // Instance singleton
-  private static instance: Db | null = null;
-  private static sequelizeInstance: Sequelize | null = null;
+  // VRAI singleton - une seule instance
+  private static instance: Sequelize | null = null;
   private static isInitialized: boolean = false;
-  // Instance properties
-  protected readonly sequelize: Sequelize;
-  private readonly models: Map<string, ModelStatic<Model>> = new Map();
 
-  // region Constructor
+  // Méthode statique pour obtenir l'instance unique
+  public static async getInstance(): Promise<Sequelize> {
+    if (!Db.instance) {
+      console.log('🔌 Création connexion DB singleton');
 
-  // constructor() {
-  //   console.log(`🔌 === NOUVELLE CONNEXION DB CRÉÉE ===`);
-  //   console.log(`🕐 Timestamp:`, new Date().toISOString());
-  //   console.log(`📊 Stack trace:`, new Error().stack?.split('\n')[2]);
-  //
-  //   this.sequelize = new Sequelize(Db.DB_NAME, Db.DB_USERNAME, Db.DB_PASSWORD, {
-  //     host: Db.DB_HOST,
-  //     port: Db.DB_PORT,
-  //     dialect: 'postgres',
-  //     logging: false,
-  //   });
-  // }
-
-  // Constructor protégé pour implémenter le pattern singleton
-  protected constructor() {
-    if (!Db.sequelizeInstance) {
-      console.log(`🔌 === CONNEXION DB SINGLETON CRÉÉE ===`);
-      console.log(`🕐 Timestamp:`, new Date().toISOString());
-
-      Db.sequelizeInstance = new Sequelize(Db.DB_NAME, Db.DB_USERNAME, Db.DB_PASSWORD, {
+      Db.instance = new Sequelize(Db.DB_NAME, Db.DB_USERNAME, Db.DB_PASSWORD, {
         host: Db.DB_HOST,
         port: Db.DB_PORT,
         dialect: 'postgres',
-        logging: false,
-        // Configuration pour optimiser les connexions
+        logging: console.log, // Active les logs SQL pour debug
+        dialectOptions: {
+          // Force IPv4
+          family: 4,
+        },
         pool: {
-          max: 10, // Maximum 10 connexions dans le pool
-          min: 0, // Minimum 0 connexions
-          acquire: 30000, // Temps max pour obtenir une connexion (30s)
-          idle: 10000, // Temps max qu'une connexion peut rester inactive (10s)
+          max: 10,
+          min: 0,
+          acquire: 30000,
+          idle: 10000,
         },
       });
+
+      try {
+        await Db.instance.authenticate();
+        Db.isInitialized = true;
+        console.log('✅ Connexion DB établie');
+      } catch (error) {
+        console.error('❌ Erreur connexion DB:', error);
+        throw error;
+      }
     }
-    this.sequelize = Db.sequelizeInstance;
+    return Db.instance;
   }
 
-  // endregion
-
-  // region Helpers methods
-
-  // // Méthode pour obtenir l'instance singleton
-  // public static getInstance(): Db {
-  //   return new Db().instance;
-  // }
-  // Méthode d'initialisation
-  public async initialize(): Promise<void> {
-    if (Db.isInitialized) {
-      console.log('✅ Base de données déjà initialisée');
-      return;
-    }
-
-    try {
-      await this.sequelize.authenticate();
-      console.log('✅ Connexion à la base de données établie avec succès');
-      Db.isInitialized = true;
-
-      // Initialisation spécifique du modèle (méthode abstraite)
-      // await this.init();
-    } catch (error) {
-      console.error('❌ Impossible de se connecter à la base de données:', error);
-      throw new Error(`Échec de l'initialisation de la base de données: ${error}`);
+  public static async closeConnection(): Promise<void> {
+    if (Db.instance) {
+      await Db.instance.close();
+      Db.instance = null;
+      Db.isInitialized = false;
+      console.log('🔌 Connexion DB fermée');
     }
   }
 
-  // Méthode pour initialiser la base de données une seule fois
-  // protected static async initialize(): Promise<void> {
-  //   if (Db.isInitialized) return;
-  //
-  //   const instance = Db.getInstance();
-  //   try {
-  //     await instance.sequelize.authenticate();
-  //     console.log('✅ Connexion à la base de données établie avec succès');
-  //     Db.isInitialized = true;
-  //   } catch (error) {
-  //     console.error('❌ Impossible de se connecter à la base de données:', error);
-  //     throw error;
-  //   }
-  // }
+  public static isConnected(): boolean {
+    return Db.isInitialized;
+  }
+}
+
+// Classe de base pour les modèles (remplace l'ancien Db)
+export abstract class BaseModel {
+  protected sequelize!: Sequelize;
+  // FIX : Map statique partagée entre TOUTES les instances
+  protected static sharedModels: Map<string, ModelStatic<Model>> = new Map();
+
+  protected constructor() {
+    // Constructor vide - initialisation dans init()
+  }
+
+  // IMPORTANT : Cette méthode DOIT être appelée avant toute opération
+  protected async init(): Promise<void> {
+    this.sequelize = await Db.getInstance();
+    console.log('🔗 BaseModel initialisé avec connexion DB');
+  }
 
   protected defineModel(
     tableName: string,
     attributes: Record<string, any>,
     options?: any
   ): ModelStatic<Model> {
-    if (this.models.has(tableName)) {
-      console.warn(`⚠️ Le modèle '${tableName}' existe déjà`);
-      return this.models.get(tableName)!;
+    // Utilise la Map statique partagée
+    if (BaseModel.sharedModels.has(tableName)) {
+      // console.log(`⚠️ Le modèle '${tableName}' existe déjà dans la Map partagée`);
+      return BaseModel.sharedModels.get(tableName)!;
     }
+
+    console.log(`🏗️ Création du modèle '${tableName}'`);
     const model = this.sequelize.define(tableName, attributes, { tableName, ...options });
-    this.models.set(tableName, model);
+    BaseModel.sharedModels.set(tableName, model);
+
+    // console.log(`✅ Modèle '${tableName}' ajouté à la Map partagée. Taille:`, BaseModel.sharedModels.size);
+    // console.log(`🔍 Clés dans la Map partagée:`, Array.from(BaseModel.sharedModels.keys()));
+
     return model;
   }
 
   protected getModel(tableName: string): ModelStatic<Model> | null {
-    const model = this.models.get(tableName);
+    // Debug uniquement si modèle pas trouvé
+    const model = BaseModel.sharedModels.get(tableName);
 
     if (!model) {
-      console.error(`❌ Modèle '${tableName}' non trouvé`);
+      console.log(`🔍 Recherche du modèle '${tableName}' dans la Map partagée`);
+      console.log(`📊 Taille actuelle de la Map partagée:`, BaseModel.sharedModels.size);
+      console.log(`🗝️ Clés disponibles:`, Array.from(BaseModel.sharedModels.keys()));
+      console.error(`❌ Modèle '${tableName}' non trouvé dans la Map partagée !`);
       return null;
     }
+
     return model;
   }
 
   protected async syncModel(tableName: string, force: boolean = false): Promise<void> {
     const model = this.getModel(tableName);
-    if (!model) {
-      throw new Error(`Impossible de synchroniser le modèle '${tableName}': modèle non trouvé`);
-    }
+    if (!model) throw new Error(`Modèle '${tableName}' non trouvé`);
+
     try {
       const isDevelopment = process.env.NODE_ENV !== 'production';
-      if (force) {
-        await model.sync({ force: true });
-        console.log(`🔄 Modèle '${tableName}' synchronisé avec force`);
-      } else if (isDevelopment) {
-        await model.sync({ alter: true });
-        console.log(`🔄 Modèle '${tableName}' synchronisé avec alter`);
-      } else {
-        await model.sync();
-        console.log(`🔄 Modèle '${tableName}' synchronisé`);
-      }
+      await model.sync(force ? { force: true } : isDevelopment ? { alter: true } : {});
+      console.log(`🔄 Modèle '${tableName}' synchronisé`);
     } catch (error) {
-      console.error(`❌ Erreur lors de la synchronisation du modèle '${tableName}':`, error);
+      console.error(`❌ Erreur sync '${tableName}':`, error);
       throw error;
     }
   }
 
-  public async isConnected(): Promise<boolean> {
-    try {
-      await this.sequelize.authenticate();
-      return true;
-    } catch (error) {
-      console.error(`❌ Vérification de connexion échouée:`, error);
-      return false;
-    }
-  }
-
-  // endregion
-
-  // region Database Create/Update methods
-
+  // Gardez vos méthodes CRUD existantes
   protected async insertOne(tableName: string, data: Record<string, any>): Promise<number | null> {
     try {
       const model = this.getModel(tableName);
       if (!model) return null;
 
-      const createdInstance = await model.create(data, {
-        returning: ['id'],
-      });
-      return Number(createdInstance.get('id'));
-    } catch (error) {
-      console.error(error);
-      throw error;
-      // return null;
+      const created = await model.create(data, { returning: ['id'] });
+      return Number(created.get('id'));
+    } catch (error: any) {
+      throw error.message;
     }
   }
 
   protected async updateOne(
     tableName: string,
     data: Record<string, any>,
-    whereOptions: Record<string, any>
+    where: Record<string, any>
   ): Promise<number | null> {
     try {
       const model = this.getModel(tableName);
       if (!model) return null;
 
-      const [affectedCount] = await model.update(data, {
-        where: whereOptions,
-      });
-
+      const [affectedCount] = await model.update(data, { where });
       return affectedCount > 0 ? affectedCount : null;
     } catch (error) {
-      console.error(`❌ Erreur lors de la mise à jour dans '${tableName}':`, error);
+      console.error('❌ Erreur mise à jour:', error);
       throw error;
     }
   }
 
-  protected async deleteOne(
-    tableName: string,
-    whereOptions: Record<string, any>
-  ): Promise<boolean> {
+  protected async deleteOne(tableName: string, where: Record<string, any>): Promise<boolean> {
     try {
       const model = this.getModel(tableName);
       if (!model) return false;
 
-      const deletedCount = await model.destroy({
-        where: whereOptions,
-      });
+      const deletedCount = await model.destroy({ where });
       return deletedCount > 0;
     } catch (error) {
-      console.error(`❌ Erreur lors de la suppression dans '${tableName}':`, error);
+      console.error('❌ Erreur suppression:', error);
       return false;
     }
   }
 
-  // endregion
-
-  protected async findOne(tableName: string, options: Record<string, any>): Promise<any> {
+  protected async findOne(tableName: string, where: Record<string, any>): Promise<any> {
     try {
       const model = this.getModel(tableName);
       if (!model) return null;
 
-      const result = await model.findOne({
-        where: options,
-      });
-
-      return result ? result : null;
+      const result = await model.findOne({ where });
+      return result ? result.get() : null;
     } catch (error) {
-      console.error(`❌ Erreur lors de la recherche dans '${tableName}':`, error);
+      console.error('❌ Erreur recherche:', error);
       return null;
     }
   }
 
-  protected async findAll(tableName: string, options: Record<string, any> = {}): Promise<any[]> {
+  protected async findAll(tableName: string, where: Record<string, any> = {}): Promise<any[]> {
     try {
       const model = this.getModel(tableName);
       if (!model) return [];
 
-      const results = await model.findAll({
-        where: options,
-      });
-
-      return results.map((result) => result);
+      const results = await model.findAll({ where });
+      return results.map((result) => result.get());
     } catch (error) {
-      console.error(`❌ Erreur lors de la recherche multiple dans '${tableName}':`, error);
+      console.error('❌ Erreur recherche multiple:', error);
       return [];
     }
   }
-
-  protected async count(
-    tableName: string,
-    whereOptions: Record<string, any> = {}
-  ): Promise<number> {
-    const model = this.getModel(tableName);
-    if (!model) return 0;
-
-    try {
-      return await model.count({ where: whereOptions });
-    } catch (error) {
-      console.error(`❌ Erreur lors du comptage dans '${tableName}':`, error);
-      return 0;
-    }
-  }
-
-  // Gestion des transactions
-  protected async transaction<T>(callback: (transaction: any) => Promise<T>): Promise<T | null> {
-    const transaction = await this.sequelize.transaction();
-
-    try {
-      const result = await callback(transaction);
-      await transaction.commit();
-      console.log('✅ Transaction validée avec succès');
-      return result;
-    } catch (error) {
-      await transaction.rollback();
-      console.error('❌ Transaction annulée:', error);
-      return null;
-    }
-  }
-
-  // Méthodes de fermeture
-  public async close(): Promise<void> {
-    // Méthode instance pour fermer proprement
-    console.log('🔌 Fermeture de la connexion...');
-  }
-  public static async closeConnection(): Promise<void> {
-    if (Db.sequelizeInstance) {
-      try {
-        await Db.sequelizeInstance.close();
-        console.log('✅ Connexion à la base de données fermée avec succès');
-      } catch (error) {
-        console.error('❌ Erreur lors de la fermeture de la connexion:', error);
-      } finally {
-        Db.sequelizeInstance = null;
-        Db.instance = null;
-        Db.isInitialized = false;
-      }
-    }
-  }
-
-  // ===============================
-  // NOUVELLES MÉTHODES UTILITAIRES
-  // ===============================
-
-  async init(): Promise<void> {
-    // Méthode vide par défaut, surchargée dans les modèles
-  }
 }
-
-// import { Sequelize, Model, ModelStatic } from 'sequelize';
-//
-// export abstract class Db {
-//   private static readonly DB_NAME: string = 'priceradb25';
-//   private static readonly DB_PASSWORD: string = 'MonMotDePasseSecurise123!';
-//   private static readonly DB_USERNAME: string = 'priceradmin';
-//   private static readonly DB_HOST: string = '192.168.100.103';
-//   private static readonly DB_PORT: number = 5432;
-//
-//   // Instance single
-//   protected static sequelize: Sequelize | null = null;
-//
-//   protected sequelize: Sequelize;
-//   private models: Map<string, ModelStatic<Model>> = new Map();
-//   private static isInitialized: boolean = false;
-//
-//   // region Constructor
-//
-//   // constructor() {
-//   //   console.log(`🔌 === NOUVELLE CONNEXION DB CRÉÉE ===`);
-//   //   console.log(`🕐 Timestamp:`, new Date().toISOString());
-//   //   console.log(`📊 Stack trace:`, new Error().stack?.split('\n')[2]);
-//   //
-//   //   this.sequelize = new Sequelize(Db.DB_NAME, Db.DB_USERNAME, Db.DB_PASSWORD, {
-//   //     host: Db.DB_HOST,
-//   //     port: Db.DB_PORT,
-//   //     dialect: 'postgres',
-//   //     logging: false,
-//   //   });
-//   // }
-//   constructor() {
-//     // Constructeur privé pour empêcher l'instanciation directe
-//     if (!Db.sequelize) {
-//       console.log(`🔌 === CONNEXION DB SINGLETON CRÉÉE ===`);
-//       console.log(`🕐 Timestamp:`, new Date().toISOString());
-//
-//       Db.sequelize = new Sequelize(Db.DB_NAME, Db.DB_USERNAME, Db.DB_PASSWORD, {
-//         host: Db.DB_HOST,
-//         port: Db.DB_PORT,
-//         dialect: 'postgres',
-//         logging: false,
-//         // Configuration pour optimiser les connexions
-//         pool: {
-//           max: 10, // Maximum 10 connexions dans le pool
-//           min: 0, // Minimum 0 connexions
-//           acquire: 30000, // Temps max pour obtenir une connexion (30s)
-//           idle: 10000, // Temps max qu'une connexion peut rester inactive (10s)
-//         },
-//       });
-//     }
-//     this.sequelize = Db.sequelize;
-//   }
-//
-//   // endregion
-//
-//   // region Helpers methods
-//
-//   // Méthode pour obtenir l'instance singleton
-//   public static getInstance(): Db {
-//     return new Db().instance;
-//   }
-//
-//   // Méthode pour initialiser la base de données une seule fois
-//   protected static async initialize(): Promise<void> {
-//     if (Db.isInitialized) return;
-//
-//     const instance = Db.getInstance();
-//     try {
-//       await instance.sequelize.authenticate();
-//       console.log('✅ Connexion à la base de données établie avec succès');
-//       Db.isInitialized = true;
-//     } catch (error) {
-//       console.error('❌ Impossible de se connecter à la base de données:', error);
-//       throw error;
-//     }
-//   }
-//
-//   defineModel(tableName: string, attributes: Record<string, any>): ModelStatic<Model> {
-//     const model = this.sequelize.define(tableName, attributes);
-//     this.models.set(tableName, model);
-//     return model;
-//   }
-//
-//   async syncModel(tableName: string): Promise<void> {
-//     const model = this.models.get(tableName);
-//     if (model) {
-//       const isDevelopment = process.env.NODE_ENV !== 'production';
-//       if (isDevelopment) {
-//         await model.sync({ alter: true });
-//       } else {
-//         await model.sync();
-//       }
-//     }
-//   }
-//
-//   async isConnected(): Promise<boolean> {
-//     try {
-//       await this.sequelize.authenticate();
-//       return true;
-//     } catch (error) {
-//       console.error(error);
-//       return false;
-//     }
-//   }
-//
-//   // endregion
-//
-//   // region Database Create/Update methods
-//
-//   async insertOne(tableName: string, data: Record<string, any>): Promise<number | null> {
-//     try {
-//       const model = this.models.get(tableName);
-//       if (!model) return null;
-//
-//       const createdInstance = await model.create(data, {
-//         returning: ['id'],
-//       });
-//       return Number(createdInstance.get('id'));
-//     } catch (error) {
-//       console.error(error);
-//       return null;
-//     }
-//   }
-//
-//   async updateOne(
-//     tableName: string,
-//     data: Record<string, any>,
-//     whereOptions: Record<string, any>
-//   ): Promise<any> {
-//     try {
-//       const model = this.models.get(tableName);
-//       if (!model) return null;
-//
-//       const [affectedCount] = await model.update(data, {
-//         where: whereOptions,
-//       });
-//
-//       return affectedCount > 0 ? affectedCount : null;
-//     } catch (error) {
-//       console.error(error);
-//       return null;
-//     }
-//   }
-//
-//   async deleteOne(tableName: string, whereOptions: Record<string, any>): Promise<boolean> {
-//     try {
-//       const model = this.models.get(tableName);
-//       if (!model) return false;
-//
-//       const deletedCount = await model.destroy({
-//         where: whereOptions,
-//       });
-//       return deletedCount > 0;
-//     } catch (error) {
-//       console.error('Erreur lors de la suppression:', error);
-//       return false;
-//     }
-//   }
-//
-//   // endregion
-//
-//   async findOne(tableName: string, options: Record<string, any>): Promise<any> {
-//     try {
-//       const model = this.models.get(tableName);
-//       if (!model) return null;
-//
-//       const result = await model.findOne({
-//         where: options,
-//       });
-//
-//       return result ? result.toJSON() : null;
-//     } catch (error) {
-//       console.error(error);
-//       return null;
-//     }
-//   }
-//
-//   async findAll(tableName: string, options: Record<string, any> = {}): Promise<any[]> {
-//     try {
-//       const model = this.models.get(tableName);
-//       if (!model) return [];
-//
-//       const results = await model.findAll({
-//         where: options,
-//       });
-//
-//       return results.map((result) => result.toJSON());
-//     } catch (error) {
-//       console.error('Erreur lors de la recherche multiple:', error);
-//       return [];
-//     }
-//   }
-//
-//   // ===============================
-//   // NOUVELLES MÉTHODES UTILITAIRES
-//   // ===============================
-//
-//   async init(): Promise<void> {
-//     // Méthode vide par défaut, surchargée dans les modèles
-//   }
-//
-//   public static async closeConnection(): Promise<void> {
-//     if (Db.sequelize) {
-//       await Db.sequelize.close();
-//       console.log('🔌 Connexion à la base de données fermée');
-//       Db.sequelize = null;
-//       Db.instance = null;
-//       Db.isInitialized = false;
-//     }
-//   }
-//
-//   async close(): Promise<void> {
-//     // await this.sequelize.close();
-//   }
-// }

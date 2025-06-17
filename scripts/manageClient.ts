@@ -1,3 +1,4 @@
+// scripts/manageClient.ts - Version nettoyée
 import * as readline from 'readline';
 
 import Client from '../src/class/Client';
@@ -5,323 +6,94 @@ import Db from '../src/tools/database';
 
 class ClientManager {
   private rl: readline.Interface;
+  private client: Client;
 
   constructor() {
     this.rl = readline.createInterface({
       input: process.stdin,
       output: process.stdout,
     });
+    this.client = new Client();
   }
 
   private question(prompt: string): Promise<string> {
     return new Promise((resolve) => {
-      this.rl.question(prompt, (answer) => {
-        resolve(answer.trim());
-      });
+      this.rl.question(prompt, (answer) => resolve(answer.trim()));
     });
   }
 
-  private async validateInput(name: string, secret: string): Promise<boolean> {
-    const errors: string[] = [];
-
-    if (!name || name.length === 0) {
-      errors.push("- Le nom de l'application est requis");
+  // INITIALISATION
+  async init(): Promise<void> {
+    try {
+      console.log("⏳ Initialisation de l'application...");
+      await this.client.init(); // Initialise d'abord l'instance existante
+      console.log('✅ Application initialisée');
+    } catch (error: any) {
+      console.error('❌ Erreur initialisation:', error.message);
+      throw error;
     }
-
-    if (!secret || secret.length === 0) {
-      errors.push('- Le secret est requis');
-    } else if (secret.length < 8) {
-      errors.push('- Le secret doit contenir au moins 8 caractères');
-    }
-
-    if (errors.length > 0) {
-      console.log('\n❌ Erreurs de validation:');
-      errors.forEach((error) => console.log(error));
-      console.log('');
-      return false;
-    }
-
-    return true;
   }
 
+  // CRÉATION CLIENT (fix : réutilise l'instance initialisée)
   async createClient(): Promise<void> {
     console.log("📱 === Création d'un nouveau client ===\n");
 
     try {
-      // Demander le nom de l'application
-      const appName = await this.question("📝 Nom de l'application: ");
-
-      // Demander le secret
+      const name = await this.question("📝 Nom de l'application: ");
       const secret = await this.question('🔐 Secret (min 8 caractères): ');
 
-      // Valider les entrées
-      if (!(await this.validateInput(appName, secret))) {
-        const retry = await this.question('Voulez-vous réessayer? (o/n): ');
-        if (retry.toLowerCase() === 'o' || retry.toLowerCase() === 'oui') {
-          return await this.createClient();
-        }
+      // Validation simple
+      if (!name.trim()) {
+        console.log('❌ Le nom est requis');
+        return;
+      }
+      if (secret.length < 8) {
+        console.log('❌ Le secret doit faire au moins 8 caractères');
         return;
       }
 
-      // Créer le client
       console.log('\n⏳ Création du client...');
 
-      const client = new Client().setName(appName).setSecret(secret);
-      await client.save();
+      // Créer une nouvelle instance pour éviter les conflits
+      const newClient = new Client();
+      await newClient.init();
+      newClient.setName(name).setSecret(secret);
+      await newClient.save();
 
       console.log('\n✅ Client créé avec succès!');
-      console.log('📋 Détails:');
-      console.log(`   - ID: ${client.getId()}`);
-      console.log(`   - Nom: ${client.getName()}`);
-      console.log(`   - Token: ${client.getToken()}`);
+      console.log(`   - ID: ${newClient.getId()}`);
+      console.log(`   - Nom: ${newClient.getName()}`);
+      console.log(`   - Token: ${newClient.getToken()}`);
+    } catch (error: any) {
+      console.log('\n❌ Erreur:', this.getFriendlyErrorMessage(error.message));
 
-      console.log(`-`.repeat(50));
-    } catch (error) {
-      console.log('\n❌ Erreur:', error);
+      // Proposer des solutions
+      if (error.message.includes('unique') || error.message.includes('existe déjà')) {
+        console.log('\n💡 Solutions possibles:');
+        console.log("   - Choisir un autre nom d'application");
+        console.log('   - Vérifier les clients existants (option 2)');
+      }
     }
   }
 
-  async updateClient(): Promise<void> {
-    console.log("\n🔄 === Mise à jour d'un client ===\n");
-
-    try {
-      // Récupérer tous les clients
-      const clients = await Client.getAllClients();
-
-      if (clients.length === 0) {
-        console.log('📭 Aucun client disponible pour modification\n');
-        return;
-      }
-
-      // Afficher la liste des clients
-      console.log(`📊 ${clients.length} client(s) disponible(s):\n`);
-      clients.forEach((client, index) => {
-        console.log(`${index + 1}. 📱 ${client.getName()}`);
-        // console.log(`   🆔 ID: ${client.getId()}`);
-        console.log(`   🔐 Secret: ***${client.getSecret()?.slice(-4)}`);
-        console.log('   ─────────────────────────────');
-      });
-
-      // Demander à l'utilisateur de choisir un client
-      const choice = await this.question(
-        '\n📝 Sélectionnez le numéro du client à modifier (0 pour annuler): '
-      );
-      const clientIndex = parseInt(choice) - 1;
-
-      // Vérifier la validité du choix
-      if (choice === '0') {
-        console.log('❌ Modification annulée');
-        return;
-      }
-
-      if (isNaN(clientIndex) || clientIndex < 0 || clientIndex >= clients.length) {
-        console.log('❌ Sélection invalide');
-        return;
-      }
-
-      // Récupérer le client sélectionné
-      const selectedClient = clients[clientIndex];
-      const client = await Client.getById(selectedClient.getId()!);
-
-      if (!client) {
-        console.log('❌ Erreur lors de la récupération du client');
-        return;
-      }
-
-      console.log(`\n📋 Client sélectionné: ${client.getName()}`);
-      // console.log(`🆔 ID: ${client.getId()}`);
-      console.log(`🔑 Token actuel: ${client.getToken()}`);
-
-      // Demander les nouvelles valeurs
-      const newName = await this.question(
-        `📝 Nouveau nom (actuel: "${client.getName()}", laisser vide pour ne pas changer): `
-      );
-      const newSecret = await this.question(
-        '🔐 Nouveau secret (laisser vide pour ne pas changer): '
-      );
-
-      // Mettre à jour seulement les champs renseignés
-      if (newName.trim()) {
-        client.setName(newName);
-      }
-      if (newSecret.trim()) {
-        if (newSecret.length < 8) {
-          console.log('❌ Le secret doit contenir au moins 8 caractères');
-          return;
-        }
-        client.setSecret(newSecret);
-
-        const token = await Client.generateTokenData(newSecret);
-        if (!token) {
-          console.log(`💔 la generation du token à partir du secret : ${newSecret} a échouée`);
-          return;
-        }
-        console.log(`token généré est: ${token}`);
-        client.setToken(token);
-      }
-
-      if (!newName.trim() && !newSecret.trim()) {
-        console.log('⚠️  Aucune modification effectuée');
-        return;
-      }
-
-      console.log('\n⏳ Mise à jour du client...');
-      // const result = await client.save();
-      //
-      // if (result) {
-      //   console.log('✅ Client mis à jour avec succès!');
-      //   console.log('📋 Nouvelles informations:');
-      //   console.log(`   - Nom: ${client.getName()}`);
-      //   console.log(`   - Token: ${client.getToken()}`);
-      // } else {
-      //   console.log('❌ Erreur lors de la mise à jour');
-      // }
-    } catch (error) {
-      console.log('\n❌ Erreur:', error);
+  // Méthode utilitaire pour des messages d'erreur user-friendly
+  private getFriendlyErrorMessage(errorMessage: string): string {
+    if (errorMessage.includes('unique')) {
+      return "Ce nom d'application existe déjà. Choisissez un autre nom.";
     }
+    if (errorMessage.includes('must be unique')) {
+      return "Ce nom d'application est déjà utilisé. Choisissez un autre nom.";
+    }
+    if (errorMessage.includes('connection')) {
+      return 'Problème de connexion à la base de données. Vérifiez que PostgreSQL est démarré.';
+    }
+    if (errorMessage.includes('validation')) {
+      return 'Les données saisies ne sont pas valides. Vérifiez le format.';
+    }
+    return errorMessage; // Message original si pas de correspondance
   }
 
-  async toggleActivationClient(): Promise<void> {
-    console.log('\n🔄 === Changement du statut du client ===\n');
-
-    try {
-      // Récupérer tous les clients
-      const clients = await Client.getAllClients();
-
-      if (clients.length === 0) {
-        console.log('📭 Aucun client disponible pour modification\n');
-        return;
-      }
-
-      // Afficher la liste des clients
-      console.log(`📊 ${clients.length} client(s) disponible(s):\n`);
-      clients.forEach((client, index) => {
-        console.log(`${index + 1}. 📱 ${client.getName()}`);
-        console.log(`   🆔 Active: ${client.getActive()}`);
-        // console.log(`   🔐 Secret: ***${client.getSecret()?.slice(-4)}`);
-        console.log('   ─────────────────────────────');
-      });
-
-      // Demander à l'utilisateur de choisir un client
-      const choice = await this.question(
-        '\n📝 Sélectionnez le numéro du client à modifier (0 pour annuler): '
-      );
-      const clientIndex = parseInt(choice) - 1;
-
-      // Vérifier la validité du choix
-      if (choice === '0') {
-        console.log('❌ Modification annulée');
-        return;
-      }
-
-      if (isNaN(clientIndex) || clientIndex < 0 || clientIndex >= clients.length) {
-        console.log('❌ Sélection invalide');
-        return;
-      }
-
-      // Récupérer le client sélectionné
-      const selectedClient = clients[clientIndex];
-      const client = await Client.getById(selectedClient.getId()!);
-
-      if (!client) {
-        console.log('❌ Erreur lors de la récupération du client');
-        return;
-      }
-
-      console.log(`\n📋 Client sélectionné: ${client.getName()}`);
-      // console.log(`🆔 ID: ${client.getId()}`);
-      console.log(`🔑 Token actuel: ${client.getToken()}`);
-
-      client.setActive(!client.getActive());
-      console.log(client.getActive());
-
-      console.log('\n⏳ Mise à jour du client...');
-      // const result = await client.save();
-      //
-      // if (result) {
-      //   console.log('✅ Client mis à jour avec succès!');
-      //   console.log('📋 Nouvelles informations:');
-      //   console.log(`   - Nom: ${client.getName()}`);
-      //   console.log(`   - Token: ${client.getToken()}`);
-      //   console.log(`   - Statut: ${client.getActive()}`);
-      // } else {
-      //   console.log('❌ Erreur lors de la mise à jour');
-      // }
-    } catch (error) {
-      console.log(`\n❌ Erreur:`, error);
-    }
-  }
-
-  async deleteClient(): Promise<void> {
-    console.log("\n🗑️  === Suppression d'un client ===\n");
-
-    try {
-      // Récupérer tous les clients
-      const clients = await Client.getAllClients();
-
-      if (clients.length === 0) {
-        console.log('📭 Aucun client disponible pour le moment\n');
-        return;
-      }
-
-      // Afficher la liste des clients
-      console.log(`📊 ${clients.length} client(s) disponible(s):\n`);
-      clients.forEach((client, index) => {
-        console.log(`${index + 1}. 📱 ${client.getName()}`);
-        console.log(`   🆔 Active: ${client.getActive()}`);
-        console.log('   ─────────────────────────────');
-      });
-
-      // Demander à l'utilisateur de choisir un client
-      const choice = await this.question(
-        '\n📝 Sélectionnez le numéro du client à supprimer (0 pour annuler): '
-      );
-      const clientIndex = parseInt(choice) - 1;
-
-      // Vérifier la validité du choix
-      if (choice === '0') {
-        console.log('❌ Modification annulée');
-        return;
-      }
-
-      if (isNaN(clientIndex) || clientIndex < 0 || clientIndex >= clients.length) {
-        console.log('❌ Sélection invalide');
-        return;
-      }
-
-      // Récupérer le client sélectionné
-      const selectedClient = clients[clientIndex];
-      const client = await Client.getById(selectedClient.getId()!);
-
-      if (!client) {
-        console.log('❌ Erreur lors de la récupération du client');
-        return;
-      }
-      console.log(`\n📋 Client à supprimer: ${client.getName()}`);
-      console.log(`🔑 Token: ${client.getToken()}`);
-
-      const confirmation = await this.question(
-        '\n⚠️  Êtes-vous sûr de vouloir supprimer ce client? (oui/non): '
-      );
-
-      if (confirmation.toLowerCase() !== 'oui') {
-        console.log('❌ Suppression annulée');
-        return;
-      }
-
-      console.log('\n⏳ Suppression du client...');
-      const success = await client.delete();
-
-      if (success) {
-        console.log('✅ Client supprimé avec succès!');
-      } else {
-        console.log('❌ Erreur lors de la suppression');
-      }
-    } catch (error) {
-      console.log('\n❌ Erreur:', error);
-    }
-  }
-
+  // LISTE DES CLIENTS
   async listClients(): Promise<void> {
     console.log('\n📋 === Liste des clients ===\n');
 
@@ -334,174 +106,209 @@ class ClientManager {
       }
 
       console.log(`📊 ${clients.length} client(s) trouvé(s):\n`);
-
       clients.forEach((client, index) => {
         console.log(`${index + 1}. 📱 ${client.getName()}`);
-        console.log(`   🔐 Secret: ***${client.getSecret()?.slice(-4)}`);
+        console.log(`   🆔 ID: ${client.getId()}`);
+        console.log(`   ✅ Actif: ${client.getActive() ? 'Oui' : 'Non'}`);
         console.log('   ─────────────────────────────');
       });
-
-      console.log('');
-    } catch (error) {
-      console.log('❌ Erreur lors de la récupération des clients:', error);
+    } catch (error: any) {
+      console.log('❌ Erreur:', error.message);
     }
   }
 
+  // SÉLECTION D'UN CLIENT
+  private async selectClient(action: string): Promise<Client | null> {
+    const clients = await Client.getAllClients();
+
+    if (clients.length === 0) {
+      console.log('📭 Aucun client disponible\n');
+      return null;
+    }
+
+    console.log(`📊 ${clients.length} client(s) disponible(s):\n`);
+    clients.forEach((client, index) => {
+      console.log(
+        `${index + 1}. 📱 ${client.getName()} (${client.getActive() ? 'Actif' : 'Inactif'})`
+      );
+    });
+
+    const choice = await this.question(
+      `\n📝 Sélectionnez le client à ${action} (0 pour annuler): `
+    );
+    const clientIndex = parseInt(choice) - 1;
+
+    if (choice === '0') {
+      console.log('❌ Action annulée');
+      return null;
+    }
+
+    if (isNaN(clientIndex) || clientIndex < 0 || clientIndex >= clients.length) {
+      console.log('❌ Sélection invalide');
+      return null;
+    }
+
+    return await Client.getById(clients[clientIndex].getId()!);
+  }
+
+  // MODIFICATION CLIENT
+  async updateClient(): Promise<void> {
+    console.log("\n🔄 === Modification d'un client ===\n");
+
+    try {
+      const client = await this.selectClient('modifier');
+      if (!client) return;
+
+      console.log(`\n📋 Client sélectionné: ${client.getName()}`);
+
+      const newName = await this.question(
+        `📝 Nouveau nom (actuel: "${client.getName()}", vide = pas de changement): `
+      );
+
+      if (newName.trim()) {
+        client.setName(newName);
+        await client.save();
+        console.log('✅ Client modifié avec succès!');
+      } else {
+        console.log('⚠️ Aucune modification effectuée');
+      }
+    } catch (error: any) {
+      console.log('\n❌ Erreur:', error.message);
+    }
+  }
+
+  // CHANGEMENT DE STATUT
+  async toggleClientStatus(): Promise<void> {
+    console.log('\n🔄 === Changement de statut ===\n');
+
+    try {
+      const client = await this.selectClient('modifier');
+      if (!client) return;
+
+      console.log(`\n📋 Client: ${client.getName()}`);
+      console.log(`📊 Statut actuel: ${client.getActive() ? 'Actif' : 'Inactif'}`);
+
+      const confirm = await this.question('Changer le statut? (o/n): ');
+      if (confirm.toLowerCase() !== 'o') {
+        console.log('❌ Action annulée');
+        return;
+      }
+
+      await client.toggleStatusClient();
+      console.log(`✅ Nouveau statut: ${client.getActive() ? 'Actif' : 'Inactif'}`);
+    } catch (error: any) {
+      console.log('\n❌ Erreur:', error.message);
+    }
+  }
+
+  // SUPPRESSION CLIENT
+  async deleteClient(): Promise<void> {
+    console.log("\n🗑️ === Suppression d'un client ===\n");
+
+    try {
+      const client = await this.selectClient('supprimer');
+      if (!client) return;
+
+      console.log(`\n⚠️ Client à supprimer: ${client.getName()}`);
+
+      const confirmation = await this.question('Confirmer la suppression? (oui/non): ');
+      if (confirmation.toLowerCase() !== 'oui') {
+        console.log('❌ Suppression annulée');
+        return;
+      }
+
+      const success = await client.delete();
+      if (success) {
+        console.log('✅ Client supprimé avec succès!');
+      } else {
+        console.log('❌ Erreur lors de la suppression');
+      }
+    } catch (error: any) {
+      console.log('\n❌ Erreur:', error.message);
+    }
+  }
+
+  // TEST CONNEXION
+  async testConnection(): Promise<void> {
+    console.log('\n🔌 === Test de connexion ===\n');
+
+    try {
+      const isConnected = Db.isConnected();
+      if (isConnected) {
+        console.log('✅ Connexion à la base de données OK');
+      } else {
+        console.log('❌ Problème de connexion à la base de données');
+      }
+    } catch (error: any) {
+      console.log('❌ Erreur:', error.message);
+    }
+  }
+
+  // MENU PRINCIPAL
   async showMenu(): Promise<void> {
-    console.log('\n🛠️  === Gestionnaire de clients ===');
+    console.log('\n🛠️ === Gestionnaire de clients ===');
     console.log('1. Créer un nouveau client');
     console.log('2. Lister tous les clients');
-    // console.log('3. Voir un client spécifique');
     console.log('3. Modifier un client');
-    console.log('4. Supprimer un client');
-    console.log('5. Changer le statut du client');
+    console.log("4. Changer le statut d'un client");
+    console.log('5. Supprimer un client');
     console.log('6. Tester la connexion DB');
     console.log('7. Quitter');
 
-    const choice = await this.question('\nVotre choix (1-6): ');
+    const choice = await this.question('\nVotre choix (1-7): ');
 
     switch (choice) {
       case '1':
         await this.createClient();
-        await this.showMenu();
         break;
       case '2':
         await this.listClients();
-        await this.showMenu();
         break;
       case '3':
         await this.updateClient();
-        await this.showMenu();
         break;
       case '4':
-        await this.deleteClient();
-        await this.showMenu();
+        await this.toggleClientStatus();
         break;
       case '5':
-        await this.toggleActivationClient();
-        await this.showMenu();
+        await this.deleteClient();
         break;
-      // case '6':
-      //   await this.testConnection();
-      //   await this.showMenu();
-      //   break;
-      // case '7':
-      //   await this.testConnection();
-      //   await this.showMenu();
-      //   break;
       case '6':
-        console.log('\n👋 Au revoir!');
+        await this.testConnection();
         break;
+      case '7':
+        console.log('\n👋 Au revoir!');
+        return;
       default:
         console.log('\n❌ Choix invalide');
-        await this.showMenu();
-        break;
     }
-  }
 
-  // async testConnection(): Promise<void> {
-  //   console.log('\n🔌 === Test de connexion ===\n');
-  //
-  //   try {
-  //     const db = Db.getInstance();
-  //     const isConnected = await db.isConnected();
-  //
-  //     if (isConnected) {
-  //       console.log('✅ Connexion à la base de données OK');
-  //     } else {
-  //       console.log('❌ Problème de connexion à la base de données');
-  //     }
-  //   } catch (error) {
-  //     console.log('❌ Erreur lors du test de connexion:', error);
-  //   }
-  // }
+    await this.showMenu(); // Reboucle
+  }
 
   async start(): Promise<void> {
     try {
-      // // Initialiser le modèle Client
-      // const clientModel = new ClientModel();
-      // await clientModel.init();
-
-      // console.log('✅ Modèles initialisé');
-      //
-      // await Db.initialize();
-      // console.log('✅ Connexion initialisée');
-
-      // Afficher le menu
+      await this.init();
       await this.showMenu();
-    } catch (error) {
-      console.log('❌ Erreur:', error);
+    } catch (error: any) {
+      console.error('❌ Erreur fatale:', error);
     } finally {
       this.rl.close();
     }
   }
-
-  // async viewClient(): Promise<void> {
-  //   console.log('\n👁️  === Voir un client ===\n');
-  //
-  //   try {
-  //     const choice = await this.question('Rechercher par (1) ID ou (2) Token? (1/2): ');
-  //
-  //     let client: Client | null = null;
-  //
-  //     if (choice === '1') {
-  //       const clientId = await this.question('📝 ID du client: ');
-  //       const id = parseInt(clientId);
-  //
-  //       if (isNaN(id)) {
-  //         console.log('❌ ID invalide');
-  //         return;
-  //       }
-  //
-  //       client = await Client.getById(id);
-  //     } else if (choice === '2') {
-  //       const token = await this.question('🔑 Token du client: ');
-  //       client = await Client.getByToken(token);
-  //     } else {
-  //       console.log('❌ Choix invalide');
-  //       return;
-  //     }
-  //
-  //     if (!client) {
-  //       console.log('❌ Client non trouvé');
-  //       return;
-  //     }
-  //
-  //     console.log('\n📋 === Détails du client ===');
-  //     // console.log(`🆔 ID: ${client.getId()}`);
-  //     console.log(`📱 Nom: ${client.getName()}`);
-  //     console.log(`🔑 Token: ${client.getToken()}`);
-  //     console.log(`✅ Valide: ${client.getActive() === true ? 'Oui' : 'Non'}`);
-  //     // console.log(`🔐 Secret: ${client.getSecret()}`);
-  //     // console.log(`✅ Valide: ${client.isValid() ? 'Oui' : 'Non'}`);
-  //     // console.log(`🆕 Nouveau: ${client.isNew() ? 'Oui' : 'Non'}`);
-  //     console.log('');
-  //   } catch (error) {
-  //     console.log('\n❌ Erreur:', error);
-  //   }
-  // }
 }
 
-// Gestion propre de l'arrêt du processus
+// Gestion propre de l'arrêt
 process.on('SIGINT', async () => {
-  console.log('\n🛑 Arrêt du processus...');
+  console.log('\n🛑 Arrêt...');
   await Db.closeConnection();
   process.exit(0);
 });
 
-process.on('SIGTERM', async () => {
-  console.log('\n🛑 Arrêt du processus...');
-  await Db.closeConnection();
-  process.exit(0);
-});
-
-// Démarrer le gestionnaire
+// Démarrage
 if (require.main === module) {
   const manager = new ClientManager();
-  manager.start().catch((error) => {
-    console.error('❌ Erreur fatale:', error);
-    process.exit(1);
-  });
+  manager.start().catch(console.error);
 }
 
 export default ClientManager;

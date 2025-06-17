@@ -1,5 +1,3 @@
-import W from '../tools/watcher';
-import { ApiKeyManager } from '../tools/api-key-manager';
 import ClientModel from '../model/ClientModel';
 
 export default class Client extends ClientModel {
@@ -7,7 +5,7 @@ export default class Client extends ClientModel {
     super();
   }
 
-  // Setters
+  // SETTERS FLUIDES (garde ton style)
   setName(name: string): Client {
     this.name = name;
     return this;
@@ -15,11 +13,6 @@ export default class Client extends ClientModel {
 
   setSecret(secret: string): Client {
     this.secret = secret;
-    return this;
-  }
-
-  setToken(token: string): Client {
-    this.token = token;
     return this;
   }
 
@@ -33,239 +26,173 @@ export default class Client extends ClientModel {
     return this;
   }
 
-  // Getters
+  // GETTERS SIMPLES
   getName(): string | undefined {
     return this.name;
   }
-
   getSecret(): string | undefined {
     return this.secret;
   }
-
   getToken(): string | undefined {
     return this.token;
   }
-
   getId(): number | undefined {
     return this.id;
   }
-
   getActive(): boolean | undefined {
     return this.active;
   }
 
-  // Méthodes métier
+  // MÉTHODES MÉTIER (garde ta logique existante)
   async save(): Promise<void> {
-    !this.id ? await this.create() : await this.update();
-  }
-
-  async toggleStatusClient(): Promise<any> {
-    if (!this.id) return null;
     try {
-      return await this.toggleStatus(this.id);
+      if (this.isNew()) {
+        await this.create();
+      } else {
+        await this.update();
+      }
     } catch (error: any) {
-      console.error(`❌ Erreur lors de la désactivation:`, error);
-      throw error;
+      console.error('❌ Erreur sauvegarde:', error);
+      throw new Error(error);
     }
   }
 
   async delete(): Promise<boolean> {
     if (!this.id) {
-      console.warn('⚠️  Impossible de supprimer : aucun ID défini');
+      console.warn('⚠️ Impossible de supprimer : aucun ID défini');
       return false;
     }
+
     try {
       const success = await this.deleted(this.id);
-
       if (success) {
-        // Réinitialiser l'instance après suppression
-        this.id = undefined;
-        this.name = undefined;
-        this.token = undefined;
-        this.secret = undefined;
-        this.active = undefined;
-        console.log('✅ Client supprimé et instance réinitialisée');
+        this.resetInstance();
+        console.log('✅ Client supprimé');
       }
-
       return success;
-    } catch (error) {
-      console.error(`❌ Erreur lors de la suppression:`, error);
+    } catch (error: any) {
+      console.error('❌ Erreur suppression:', error.message);
       return false;
     }
   }
 
+  async toggleStatusClient(): Promise<void> {
+    if (!this.id) {
+      throw new Error('Impossible de changer le statut : aucun ID défini');
+    }
+
+    try {
+      await this.toggleStatus(this.id);
+      this.active = !this.active; // Met à jour l'instance locale
+      console.log(`✅ Statut changé: ${this.active ? 'actif' : 'inactif'}`);
+    } catch (error: any) {
+      console.error('❌ Erreur changement statut:', error.message);
+      throw error;
+    }
+  }
+
+  // CHARGEMENT DES DONNÉES
   async load(
     identifier: any,
     byToken: boolean = false,
     byName: boolean = false
   ): Promise<Client | null> {
-    let data;
-    if (byName) {
-      data = await this.findByName(identifier);
-    } else {
-      data = byToken ? await this.findByToken(identifier) : await this.find(identifier);
+    try {
+      let data;
+
+      if (byName) {
+        data = await this.findByName(identifier);
+      } else if (byToken) {
+        data = await this.findByToken(identifier);
+      } else {
+        data = await this.find(identifier);
+      }
+
+      if (!data) return null;
+
+      return this.populateFromData(data);
+    } catch (error: any) {
+      console.error('❌ Erreur chargement:', error.message);
+      return null;
     }
-    if (!data) return null;
-    return new Client()
-      .setId(data.id)
-      .setName(data.name)
-      .setToken(data.token)
-      .setSecret(data.secret)
-      .setActive(data.active);
   }
 
-  /**
-   * Récupère tous les clients selon des conditions optionnelles
-   */
-  async findAllClients(conditions: Record<string, any> = {}) {
+  async findAllClients(conditions: Record<string, any> = {}): Promise<Client[]> {
     try {
       const dataList = await this.findAllClient(conditions);
-      console.log(`📋 ${dataList.length} client(s) trouvé(s)`);
-
-      return dataList.map((data) => Client.fromData(data));
-    } catch (error) {
-      console.error('❌ Erreur lors de la recherche multiple:', error);
+      return dataList.map((data) => Client.createFromData(data));
+    } catch (error: any) {
+      console.error('❌ Erreur recherche multiple:', error.message);
       return [];
     }
   }
 
-  // Méthode pour charger depuis un objet
-  static fromData(data: any): Client {
-    return new Client()
-      .setId(data.id)
-      .setName(data.name)
-      .setToken(data.token)
-      .setSecret(data.secret)
-      .setActive(data.active);
+  // MÉTHODES STATIQUES (fixées pour l'initialisation)
+  static async getById(id: number): Promise<Client | null> {
+    const instance = new Client();
+    await instance.init(); // TOUJOURS nécessaire pour this.sequelize
+    return await instance.load(id);
   }
 
-  // Sérialisation
-  toJSON(): object {
-    return {
-      token: this.token,
-      name: this.name,
-      Active: this.active,
-    };
+  static async getByToken(token: string): Promise<Client | null> {
+    const instance = new Client();
+    await instance.init(); // TOUJOURS nécessaire pour this.sequelize
+    return await instance.load(token, true);
   }
 
-  toString(): string {
-    return `Client {
-      id: ${this.id || 'undefined'},
-      name: "${this.name || 'undefined'}",
-      token: "${this.token || 'undefined'}",
-      secret: "${this.secret ? '***' + this.secret.slice(-4) : 'undefined'}",
-      active: "${this.active ? 'true' : 'false'}"
-    }`;
+  static async getByName(name: string): Promise<Client | null> {
+    const instance = new Client();
+    await instance.init(); // TOUJOURS nécessaire pour this.sequelize
+    return await instance.load(name, false, true);
   }
 
-  // Version complète pour debug (avec secret complet)
-  toStringDebug(): string {
-    return `Client {
-      id: ${this.id || 'undefined'},
-      name: "${this.name || 'undefined'}",
-      token: "${this.token || 'undefined'}",
-      secret: "${this.secret || 'undefined'}",
-      active: "${this.active ? 'true' : 'false'}"
-    }`;
+  static async getAllClients(): Promise<Client[]> {
+    const instance = new Client();
+    await instance.init(); // TOUJOURS nécessaire pour this.sequelize
+    return await instance.findAllClients();
   }
 
-  // Version pour les logs (sans secret)
-  toStringSecure(): string {
-    return `Client {
-      id: ${this.id || 'undefined'},
-      name: "${this.name || 'undefined'}",
-      token: "${this.token || 'undefined'}",
-      secret: "[HIDDEN]",
-      active: "${this.active ? 'true' : 'false'}"
-    }`;
+  static createFromData(data: any): Client {
+    return new Client().setId(data.id).setName(data.name).setActive(data.active);
   }
 
-  /**
-   * Vérifie si le client est valide (a un ID et des données)
-   */
-  isValid(): boolean {
-    return !!(this.id && this.name && this.token && this.secret);
-  }
-
-  /**
-   * Vérifie si le client est nouveau (pas encore sauvegardé)
-   */
+  // UTILITAIRES
   isNew(): boolean {
     return this.id === undefined;
   }
 
-  /**
-   * Méthode statique pour récupérer tous les clients
-   */
-  static async getAllClients(): Promise<Client[]> {
-    try {
-      const instance = new Client();
-      return await instance.findAllClients();
-    } catch (error) {
-      console.error('❌ Erreur lors de la récupération de tous les clients:', error);
-      return [];
-    }
+  isValid(): boolean {
+    return !!(this.name && this.secret);
   }
 
-  /**
-   * Méthode statique pour trouver un client par ID
-   */
-  static async getById(id: number): Promise<Client | null> {
-    try {
-      const instance = new Client();
-      return await instance.load(id);
-    } catch (error) {
-      console.error('❌ Erreur lors de la recherche statique par ID:', error);
-      return null;
-    }
+  toJSON(): object {
+    return {
+      id: this.id,
+      name: this.name,
+      token: this.token,
+      active: this.active,
+    };
   }
 
-  /**
-   * Méthode statique pour trouver un client par token
-   */
-  static async getByToken(token: string): Promise<Client | null> {
-    try {
-      const instance = new Client();
-      return await instance.load(token, true);
-    } catch (error) {
-      console.error('❌ Erreur lors de la recherche statique par token:', error);
-      return null;
-    }
+  toString(): string {
+    return `Client { id: ${this.id}, name: "${this.name}", active: ${this.active} }`;
   }
 
-  static async getByName(name: string): Promise<Client | null> {
-    try {
-      const instance = new Client();
-      return await instance.load(name, false, true);
-    } catch (error) {
-      console.error('❌ Erreur lors de la recherche statique par nom:', error);
-      return null;
-    }
+  // PRIVÉES
+  private populateFromData(data: any): Client {
+    this.id = data.id;
+    this.name = data.name;
+    this.token = data.token;
+    this.secret = data.secret;
+    this.active = data.active;
+    return this;
   }
 
-  /**
-   * Génère un token unique à partir d'un secret
-   * @param secret - Le secret pour générer le token
-   * @returns Promise<string | null> - Le token généré ou null en cas d'erreur
-   */
-  static async generateTokenData(secret: string): Promise<string | null> {
-    try {
-      await W.isOccur(!secret, `Secret is required for token generation`);
-      await W.isOccur(secret.length < 8, `Secret must be at least 8 characters long`);
-
-      const fullToken = ApiKeyManager.generate(secret);
-      console.log(
-        `🔑 Token généré - API Key: ${fullToken.split('.')[0]} | API Secret: ${fullToken.split('.')[1]}`
-      );
-      return fullToken.split('.')[0];
-      // const apiKey = fullToken.split('.')[0];
-
-      // // Créer une instance temporaire pour accéder aux méthodes protected
-      // const instance = new Client();
-      // return await instance.this.createToken(apiKey.split('.')[0], 1);
-    } catch (error) {
-      console.error(`❌ Erreur lors de la génération du token:`, error);
-      return null;
-    }
+  private resetInstance(): void {
+    this.id = undefined;
+    this.name = undefined;
+    this.token = undefined;
+    this.secret = undefined;
+    this.active = undefined;
   }
 }

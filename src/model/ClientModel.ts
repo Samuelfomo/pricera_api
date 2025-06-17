@@ -1,10 +1,9 @@
 import { DataTypes } from 'sequelize';
 
 import { ApiKeyManager } from '../tools/api-key-manager';
-import Db from '../tools/database';
-import W from '../tools/watcher';
+import { BaseModel } from '../tools/database';
 
-export default abstract class ClientModel extends Db {
+export default class ClientModel extends BaseModel {
   public readonly db = {
     tableName: 'xf_clients',
     id: 'id',
@@ -22,28 +21,14 @@ export default abstract class ClientModel extends Db {
 
   protected constructor() {
     super();
-    this.initModel();
   }
 
   async init(): Promise<void> {
-    // await this.initialize();
-    await this.syncModel(this.db.tableName);
+    await super.init(); // CRUCIAL : initialise this.sequelize AVANT tout
+    this.initModel(); // Puis définit le modèle
+    await this.syncModel(this.db.tableName); // Puis synchronise
+    console.log('✅ ClientModel initialisé');
   }
-  // async init(): Promise<void> {
-  //   try {
-  //     // Étape 1: S'assurer que la connexion DB est établie
-  //     await this.initialize();
-  //
-  //     // Étape 2: Initialiser le modèle APRÈS la connexion
-  //     this.initModel();
-  //     await this.syncModel(this.db.tableName);
-  //
-  //     console.log(`✅ Modèle '${this.db.tableName}' initialisé avec succès`);
-  //   } catch (error) {
-  //     console.error(`❌ Erreur lors de l'initialisation du modèle:`, error);
-  //     throw error;
-  //   }
-  // }
 
   private initModel() {
     const attributes = {
@@ -51,149 +36,150 @@ export default abstract class ClientModel extends Db {
         type: DataTypes.INTEGER,
         primaryKey: true,
         autoIncrement: true,
-        comment: 'Client',
+        comment: 'Client ID',
       },
       name: {
         type: DataTypes.STRING(128),
-        unique: { name: 'unique_client_name', msg: 'The app name must be unique' },
+        unique: { name: 'unique_client_name', msg: 'app_name_is_unique' },
         allowNull: false,
-        comment: 'Name',
+        comment: 'Application name',
       },
       token: {
         type: DataTypes.STRING(64),
         unique: { name: 'unique_client_token', msg: 'The token must be unique' },
         allowNull: false,
-        comment: 'Token',
+        comment: 'API Token',
       },
       secret: {
         type: DataTypes.STRING(64),
         allowNull: false,
-        comment: 'Given Secret',
+        comment: 'Secret key',
       },
       active: {
         type: DataTypes.BOOLEAN,
         allowNull: false,
         defaultValue: true,
-        comment: 'Active',
+        comment: 'Is active',
       },
     };
-    const options = {
-      timestamps: true,
-    };
 
-    this.defineModel(this.db.tableName, attributes, options);
+    this.defineModel(this.db.tableName, attributes, { timestamps: true });
   }
 
-  private async generateUUID(secret: string): Promise<string> {
-    return ApiKeyManager.generate(secret);
-  }
-
+  // MÉTHODES DE RECHERCHE
   protected async find(id: number): Promise<any> {
-    return await this.findOne(this.db.tableName, {
-      [this.db.id]: id,
-    });
-  }
-
-  // Nouvelle méthode findAllClient
-  protected async findAllClient(conditions: Record<string, any> = {}): Promise<any[]> {
-    return await this.findAll(this.db.tableName, conditions);
+    return await this.findOne(this.db.tableName, { [this.db.id]: id });
   }
 
   protected async findByToken(token: string): Promise<any> {
-    return await this.findOne(this.db.tableName, {
-      [this.db.token]: token,
-    });
+    return await this.findOne(this.db.tableName, { [this.db.token]: token });
   }
 
   protected async findByName(name: string): Promise<any> {
     return await this.findOne(this.db.tableName, { [this.db.name]: name });
   }
 
-  // Nouvelle méthode deleted
-  protected async deleted(id: number): Promise<boolean> {
-    return await this.deleteOne(this.db.tableName, { [this.db.id]: id });
-    // console.log(`🗑️  Suppression du client ID ${id}: ${deletedRows} ligne(s) supprimée(s)`);
-    // return deletedRows > 0;
+  protected async findAllClient(conditions: Record<string, any> = {}): Promise<any[]> {
+    return await this.findAll(this.db.tableName, conditions);
   }
 
-  protected async toggleStatus(id: number): Promise<any> {
-    await W.isOccur(isNaN(id), `id defined is invalid`);
-    const client = await this.find(id);
-    if (!client) {
-      throw new Error(`No client found`);
+  // MÉTHODES CRUD
+  protected async create(): Promise<void> {
+    // console.log('🚀 Début de create()');
+    this.validate(); // Synchrone maintenant
+
+    // Générer token unique
+    const fullToken = ApiKeyManager.generate(this.secret!);
+    const tokenPart = fullToken.split('.')[0];
+
+    console.log(`🔑 Token généré - API Key: ${tokenPart} | Secret: ${fullToken.split('.')[1]}`);
+
+    // Vérifier unicité du token (rare mais possible)
+    // console.log('🔍 Vérification unicité du token...');
+    const existingToken = await this.findByToken(tokenPart);
+    if (existingToken) {
+      throw new Error('Token collision detected, please retry');
     }
-    this.active = client.active;
-    return await this.updateOne(
-      this.db.tableName,
-      { [this.db.active]: !this.active },
-      { [this.db.id]: id }
-    );
-  }
+    // console.log('✅ Token unique confirmé');
 
-  private async createToken(token: string, attempt: number = 1): Promise<string> {
-    const existing = await this.findByToken(token);
-    if (existing) {
-      if (attempt > 10) {
-        throw new Error('Trop de tentatives de génération de token');
-      }
-
-      const newToken = await this.generateUUID(this.secret ?? '');
-      console.log(
-        `🟢 Vos tokens API :\napi-key: ${newToken.split('.')[0]}\napi-secret:${newToken.split('.')[1]}`
-      );
-
-      return this.createToken(newToken.split('.')[0], attempt + 1);
-    }
-    return token;
-  }
-
-  protected async create(): Promise<any> {
-    await this.validate();
-    let token = await this.generateUUID(this.secret ?? '');
-    console.log(
-      `🟢 Vos tokens API :\napi-key: ${token.split('.')[0]}\napi-secret:${token.split('.')[1]}`
-    );
-    await W.isOccur(!token, 'Token is not generated');
-
-    const tokenPart = await this.createToken(token.split('.')[0], 3);
-    const lastID = await this.insertOne(this.db.tableName, {
+    // Debug : voir les données à insérer
+    const dataToInsert = {
       [this.db.name]: this.name,
       [this.db.token]: tokenPart,
       [this.db.secret]: this.secret,
-    });
-    console.log(`🔴 lastID inserted: ${lastID}, isCorrect: ${!lastID ? 'Pomme' : 'Orange'}`);
-    if (lastID) {
-      this.id = lastID;
-      this.token = tokenPart;
+      [this.db.active]: true,
+    };
+
+    // console.log('📝 Données à insérer:', dataToInsert);
+
+    // console.log('💾 Appel insertOne...');
+    const lastID = await this.insertOne(this.db.tableName, dataToInsert);
+
+    // console.log('🔍 ID retourné par insertOne:', lastID);
+
+    if (!lastID) {
+      throw new Error('Failed to create client');
+    }
+
+    this.id = lastID;
+    this.token = tokenPart;
+    this.active = true;
+
+    console.log('✅ Client créé avec ID:', this.id);
+  }
+
+  protected async update(): Promise<void> {
+    this.validate();
+
+    if (!this.id) {
+      throw new Error('Client ID is required for update');
+    }
+
+    const updateData: Record<string, any> = {};
+    if (this.name !== undefined) updateData[this.db.name] = this.name;
+    if (this.active !== undefined) updateData[this.db.active] = this.active;
+
+    const affected = await this.updateOne(this.db.tableName, updateData, { [this.db.id]: this.id });
+
+    if (!affected) {
+      throw new Error('Failed to update client');
     }
   }
 
-  protected async update(): Promise<any> {
-    await this.validate();
-    await W.isOccur(!this.id, 'Client ID is required for update');
-    const updateData: Record<string, any> = {};
-    // On ne met à jour que les champs qui ont été modifiés
-    if (this.name !== undefined) updateData[this.db.name] = this.name;
-    if (this.secret !== undefined) updateData[this.db.secret] = this.secret;
-    if (this.active !== undefined) updateData.active = this.active;
-    if (this.token !== undefined) updateData.token = this.token;
-
-    // Si le secret a changé, on régénère le token
-    // if (this.secret !== undefined) {
-    //   let token = await this.generateUUID(this.secret);
-    //   updateData[this.db.token] = await this.createToken(token.split('.')[0], 1);
-    // }
-    return await this.updateOne(this.db.tableName, updateData, {
-      [this.db.id]: this.id!,
-    });
+  protected async deleted(id: number): Promise<boolean> {
+    return await this.deleteOne(this.db.tableName, { [this.db.id]: id });
   }
 
-  private async validate(): Promise<void> {
-    const name = this.name?.trim();
-    const secret = this.secret?.trim();
+  protected async toggleStatus(id: number): Promise<void> {
+    if (isNaN(id)) {
+      throw new Error('Invalid client ID');
+    }
 
-    await W.isOccur(!name, `Client name is required`);
-    await W.isOccur(!secret, `Client secret is required`);
-    await W.isOccur(!secret || secret.length < 8, `Client secret is too short`);
+    const client = await this.find(id);
+    if (!client) {
+      throw new Error('Client not found');
+    }
+
+    const newStatus = !client.active;
+    const affected = await this.updateOne(
+      this.db.tableName,
+      { [this.db.active]: newStatus },
+      { [this.db.id]: id }
+    );
+
+    if (!affected) {
+      throw new Error('Failed to toggle client status');
+    }
+  }
+
+  // VALIDATION (synchrone et simple)
+  private validate(): void {
+    if (!this.name || this.name.trim().length === 0) {
+      throw new Error('Client name is required');
+    }
+
+    if (!this.secret || this.secret.trim().length < 8) {
+      throw new Error('Client secret must be at least 8 characters');
+    }
   }
 }
