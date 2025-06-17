@@ -182,4 +182,31 @@ export default class ClientModel extends BaseModel {
       throw new Error('Client secret must be at least 8 characters');
     }
   }
+
+  // todo supprimer une fois compris comment ça marche
+
+  // À ajouter dans ClientModel.ts
+  /**
+   * Génère un GUID numérique pour ce client
+   * Exemple: si MAX(id)=5 et length=6 → 1000006
+   */
+  async generateClientGuid(length: number = 6): Promise<number | null> {
+    return await this.getGuid(this.db.tableName, length);
+  }
+
+  /**
+   * Génère un token basé sur le temps
+   * Exemple: A-20250617194025-1001
+   */
+  async generateTimeBasedClientToken(length: number = 3): Promise<string | null> {
+    return await this.getTimeBasedToken(this.db.tableName, length, '', 'CLI');
+  }
+
+  /**
+   * Génère un UUID PostgreSQL
+   * Exemple: 550e8400-e29b-41d4-a716-446655440000
+   */
+  async generateUUIDClientToken(): Promise<string | null> {
+    return await this.getTokenUUID(this.db.tableName);
+  }
 }

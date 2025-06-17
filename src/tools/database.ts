@@ -1,5 +1,4 @@
-// src/tools/database.ts - Version simplifiée et nettoyée
-import { Sequelize, Model, ModelStatic } from 'sequelize';
+import { Sequelize, Model, ModelStatic, QueryTypes } from 'sequelize';
 import { config } from 'dotenv';
 
 config();
@@ -195,6 +194,150 @@ export abstract class BaseModel {
     } catch (error) {
       console.error('❌ Erreur recherche multiple:', error);
       return [];
+    }
+  }
+
+  // Méthode à ajouter dans BaseModel
+  private checkInitialized(): void {
+    if (!this.sequelize) {
+      throw new Error("BaseModel non initialisé. Appelez init() d'abord !");
+    }
+  }
+
+  /**
+   * Génère un GUID basé sur MAX(id) + offset
+   */
+  protected async getGuid(tableName: string, length: number = 6): Promise<number | null> {
+    this.checkInitialized();
+    try {
+      const model = this.getModel(tableName);
+      if (!model) {
+        console.error(`❌ Modèle '${tableName}' non trouvé pour génération GUID`);
+        return null;
+      }
+
+      if (length < 3) {
+        console.error(`❌ Taille '${length}' non autorisé pour la génération GUID`);
+        return null;
+      }
+
+      // Calculer l'offset : 10^length
+      const offset = Math.pow(10, length - 1);
+
+      // Requête SQL pour obtenir MAX(id) + 1
+      const query = `SELECT COALESCE(MAX(id), 0) + 1 as next_id
+                     FROM ${tableName}`;
+      const [results] = (await this.sequelize.query(query, {
+        type: QueryTypes.SELECT, // ✅ Corrigé
+      })) as any[];
+
+      const nextId = results?.next_id || 1;
+      const guid = offset + nextId;
+
+      console.log(
+        `🔢 GUID généré pour '${tableName}': ${guid} (offset: ${offset}, next_id: ${nextId})`
+      );
+
+      return guid;
+    } catch (error: any) {
+      console.error(`❌ Erreur génération GUID pour '${tableName}':`, error.message);
+      return null;
+    }
+  }
+
+  /**
+   * Génère un token basé sur timestamp + GUID
+   */
+  protected async getTimeBasedToken(
+    tableName: string,
+    length: number = 3,
+    divider: string = '-',
+    prefix: string = 'A'
+  ): Promise<string | null> {
+    this.checkInitialized();
+    try {
+      // Générer le timestamp: YYYYMMDDHHMMSS
+      const now = new Date();
+      const timestamp = [
+        now.getFullYear(),
+        (now.getMonth() + 1).toString().padStart(2, '0'),
+        now.getDate().toString().padStart(2, '0'),
+        now.getHours().toString().padStart(2, '0'),
+        now.getMinutes().toString().padStart(2, '0'),
+        now.getSeconds().toString().padStart(2, '0'),
+      ].join('');
+
+      // Générer le GUID
+      const guid = await this.getGuid(tableName, length);
+      if (!guid) {
+        console.error(`❌ Impossible de générer GUID pour token basé sur le temps`);
+        return null;
+      }
+
+      // Construire le token final
+      const token = `${prefix}${divider}${timestamp}${divider}${guid}`;
+
+      console.log(`🕐 Token temporel généré: ${token}`);
+
+      return token;
+    } catch (error: any) {
+      console.error(`❌ Erreur génération token temporel:`, error.message);
+      return null;
+    }
+  }
+
+  /**
+   * Génère un token UUID via PostgreSQL gen_random_uuid()
+   */
+  protected async getTokenUUID(tableName: string): Promise<string | null> {
+    this.checkInitialized();
+    try {
+      const model = this.getModel(tableName);
+      if (!model) {
+        console.error(`❌ Modèle '${tableName}' non trouvé pour génération UUID`);
+        return null;
+      }
+
+      // Utiliser gen_random_uuid() de PostgreSQL
+      const query = 'SELECT gen_random_uuid()::text as uuid';
+      const [results] = (await this.sequelize.query(query, {
+        type: QueryTypes.SELECT, // ✅ Corrigé
+      })) as any[];
+
+      const uuid = results?.uuid;
+
+      if (!uuid) {
+        console.error(`❌ UUID non généré par PostgreSQL`);
+        return null;
+      }
+
+      console.log(`🆔 UUID PostgreSQL généré: ${uuid}`);
+
+      return uuid;
+    } catch (error: any) {
+      console.error(`❌ Erreur génération UUID PostgreSQL:`, error.message);
+
+      // Fallback: Si gen_random_uuid() n'est pas disponible
+      try {
+        console.log(`🔄 Tentative avec uuid_generate_v4()...`);
+        const fallbackQuery = 'SELECT uuid_generate_v4()::text as uuid';
+        const [fallbackResults] = (await this.sequelize.query(fallbackQuery, {
+          type: QueryTypes.SELECT, // ✅ Corrigé
+        })) as any[];
+
+        const fallbackUuid = fallbackResults?.uuid;
+        if (fallbackUuid) {
+          console.log(`🆔 UUID fallback généré: ${fallbackUuid}`);
+          return fallbackUuid;
+        }
+      } catch (fallbackError: any) {
+        console.error(
+          `❌ Extension UUID non disponible. Installez: CREATE EXTENSION IF NOT EXISTS "uuid-ossp";`,
+          fallbackError.message
+        );
+      }
+
+      return null;
     }
   }
 }
