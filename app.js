@@ -7,7 +7,7 @@ var __importDefault =
 Object.defineProperty(exports, '__esModule', { value: true });
 const express_1 = __importDefault(require('express'));
 const cors_1 = __importDefault(require('cors'));
-const auth_1 = __importDefault(require('./src/middle/auth'));
+const auth_1 = __importDefault(require('./src/middle/api-key-auth'));
 const watcher_1 = __importDefault(require('./src/tools/watcher'));
 //import Db from './src/tools/odbc';
 const app = (0, express_1.default)();

@@ -186,6 +186,7 @@ export default class ClientModel extends BaseModel {
   // todo supprimer une fois compris comment ça marche
 
   // À ajouter dans ClientModel.ts
+
   /**
    * Génère un GUID numérique pour ce client
    * Exemple: si MAX(id)=5 et length=6 → 1000006

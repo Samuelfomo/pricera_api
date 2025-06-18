@@ -16,7 +16,7 @@ export default class Client extends ClientModel {
     return this;
   }
 
-  setId(id: number): Client {
+  private setId(id: number): Client {
     this.id = id;
     return this;
   }
@@ -30,15 +30,19 @@ export default class Client extends ClientModel {
   getName(): string | undefined {
     return this.name;
   }
+
   getSecret(): string | undefined {
     return this.secret;
   }
+
   getToken(): string | undefined {
     return this.token;
   }
+
   getId(): number | undefined {
     return this.id;
   }
+
   getActive(): boolean | undefined {
     return this.active;
   }
@@ -92,21 +96,9 @@ export default class Client extends ClientModel {
   }
 
   // CHARGEMENT DES DONNÉES
-  async load(
-    identifier: any,
-    byToken: boolean = false,
-    byName: boolean = false
-  ): Promise<Client | null> {
+  async load(identifier: any, byToken: boolean = false): Promise<Client | null> {
     try {
-      let data;
-
-      if (byName) {
-        data = await this.findByName(identifier);
-      } else if (byToken) {
-        data = await this.findByToken(identifier);
-      } else {
-        data = await this.find(identifier);
-      }
+      const data = byToken ? await this.findByToken(identifier) : await this.find(identifier);
 
       if (!data) return null;
 
@@ -140,11 +132,11 @@ export default class Client extends ClientModel {
     return await instance.load(token, true);
   }
 
-  static async getByName(name: string): Promise<Client | null> {
-    const instance = new Client();
-    await instance.init(); // TOUJOURS nécessaire pour this.sequelize
-    return await instance.load(name, false, true);
-  }
+  // static async getByName(name: string): Promise<Client | null> {
+  //   const instance = new Client();
+  //   await instance.init(); // TOUJOURS nécessaire pour this.sequelize
+  //   return await instance.load(name, false, true);
+  // }
 
   static async getAllClients(): Promise<Client[]> {
     const instance = new Client();
@@ -167,7 +159,6 @@ export default class Client extends ClientModel {
 
   toJSON(): object {
     return {
-      id: this.id,
       name: this.name,
       token: this.token,
       active: this.active,

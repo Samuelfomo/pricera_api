@@ -1,6 +1,9 @@
 import express from 'express';
 
 import Db from './src/tools/database';
+import countryRouter from './routes/country';
+import Middle from './src/middle/api-key-auth';
+import Country from './src/class/Country';
 
 class App {
   private server: any;
@@ -20,6 +23,7 @@ class App {
   }
 
   private setupRoutes(): void {
+    this.app.use('/country', Middle.validateKey, countryRouter);
     this.app.get('/health', (req, res) => {
       res.json({ status: 'OK', timestamp: new Date().toISOString() });
     });
@@ -43,7 +47,8 @@ class App {
 
       // Initialiser les modèles
       console.log('📋 Initializing models...');
-
+      // const country = new Country();
+      // await country.init();
       console.log('✅ Models initialized');
 
       // Démarrer le serveur

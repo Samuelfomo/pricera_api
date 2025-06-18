@@ -10,4 +10,5 @@ export default class HttpStatus {
   static CONFLICT = 409;
   static NOT_IMPLEMENTED = 501;
   static SERVER_UNAVAILABLE = 503;
+  static TOO_MANY_REQUESTS = 429;
 }

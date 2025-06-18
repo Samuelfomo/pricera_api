@@ -28,6 +28,7 @@ export class ApiKeyManager {
     try {
       const parts: string[] = signedUUID.split('.');
       if (parts.length !== 2) {
+        console.log(`Invalid 1🔴`);
         return false;
       }
 
@@ -37,16 +38,19 @@ export class ApiKeyManager {
       const uuidRegex: RegExp =
         /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
       if (!uuidRegex.test(uuid)) {
+        console.log(`Invalid 2🔴🔴`);
         return false;
       }
 
       // VALIDATION CRITIQUE : Vérifier que la signature fournie fait exactement 64 caractères (HMAC-SHA256)
       if (providedSignature.length !== 64) {
+        console.log(`Invalid 3🔴🔴🔴`);
         return false;
       }
 
       // Vérifier que la signature ne contient que des caractères hexadécimaux
       if (!/^[0-9a-f]+$/i.test(providedSignature)) {
+        console.log(`Invalid 4🔴🔴🔴🔴`);
         return false;
       }
 
@@ -58,6 +62,7 @@ export class ApiKeyManager {
 
       // Vérifier que la signature attendue fait bien 64 caractères (sanity check)
       if (expectedSignature.length !== 64) {
+        console.log(`Invalid 5🔴🔴🔴🔴`);
         return false;
       }
 

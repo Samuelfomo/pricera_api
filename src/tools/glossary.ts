@@ -8,4 +8,5 @@ export default class G {
   };
   static missingRequired = { code: 'missing_required_fields', message: 'entry is required' };
   static unauthorizedAccess = { code: 'access_unauthorized', message: 'access unauthorized' };
+  static savedError = { code: 'data_saved_error', message: 'data not saved' };
 }
