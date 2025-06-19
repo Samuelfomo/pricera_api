@@ -49,7 +49,7 @@ export default class Country extends CountryModel {
     return this.id;
   }
 
-  getGuidData(): number | undefined {
+  getGuidData(): number | undefined | null {
     return this.guid;
   }
 

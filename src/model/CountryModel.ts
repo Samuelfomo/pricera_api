@@ -17,7 +17,7 @@ export default class CountryModel extends BaseModel {
   };
 
   protected id?: number;
-  protected guid?: number;
+  protected guid?: number | null;
   protected code?: number;
   protected iso?: string;
   protected name?: string;
@@ -77,11 +77,6 @@ export default class CountryModel extends BaseModel {
         allowNull: false,
         comment: 'Regex keys (mtnCM|orangeCM|blueCM)',
       },
-      // mobileRegex: {
-      //   type: DataTypes.JSONB,
-      //   allowNull: false,
-      //   comment: 'List of mobile regex keys for this country',
-      // },
       flag: {
         type: DataTypes.STRING(4),
         allowNull: true,
@@ -108,14 +103,18 @@ export default class CountryModel extends BaseModel {
 
   async create(): Promise<void> {
     this.validate();
+
     let guid = this.guid;
     if (!guid) {
-      guid = Number(this.getGuid(this.db.tableName));
+      // ✅ FIX : Attendre la Promise
+      guid = await this.getGuid(this.db.tableName);
     }
+
     if (!guid) {
-      throw new Error(`guid not generated`);
+      throw new Error(`GUID generation failed for table ${this.db.tableName}`);
     }
-    console.log(`guid generated is ${guid}`);
+
+    console.log(`🔢 GUID généré: ${guid}`);
 
     const dataToInsert = {
       [this.db.guid]: guid,
@@ -131,10 +130,11 @@ export default class CountryModel extends BaseModel {
     if (!lastID) {
       throw new Error('Failed to create Country');
     }
+
     this.id = lastID;
     this.guid = guid;
 
-    console.log(`Country created is ${this}`);
+    console.log(`✅ Country created with ID: ${this.id}, GUID: ${this.guid}`);
   }
 
   async update(): Promise<void> {
@@ -143,7 +143,25 @@ export default class CountryModel extends BaseModel {
     if (!this.id) {
       throw new Error('Country ID is required for update');
     }
-    const updateData: Record<string, any> = {};
+
+    const updateData: Record<string, any> = {
+      [this.db.code]: this.code,
+      [this.db.iso]: this.iso,
+      [this.db.name]: this.name,
+      [this.db.timezone]: this.timezone,
+      [this.db.mobileRegex]: this.mobileRegex,
+      [this.db.flag]: this.flag,
+    };
+
+    const affectedRows = await this.updateOne(this.db.tableName, updateData, {
+      [this.db.id]: this.id,
+    });
+
+    if (!affectedRows) {
+      throw new Error('Failed to update Country');
+    }
+
+    console.log(`✅ Country updated: ${affectedRows} row(s) affected`);
   }
 
   private validate(): void {
@@ -151,11 +169,21 @@ export default class CountryModel extends BaseModel {
     const name = this.name?.trim();
     const tz = this.timezone?.trim();
     const regex = this.mobileRegex?.trim();
-    if (!this.code || isNaN(this.code))
+
+    if (!this.code || isNaN(this.code)) {
       throw new Error(`Country code ${G.missingRequired.message}`);
-    if (!iso || iso.length !== 2) throw new Error(`Country iso ${G.missingRequired.message}`);
-    if (!name || name.length < 2) throw new Error(`Country name ${G.missingRequired.message}`);
-    if (!tz) throw new Error(`Country timezone ${G.missingRequired.message}`);
-    if (!regex) throw new Error(`Country mobileRegex ${G.missingRequired.message}`);
+    }
+    if (!iso || iso.length !== 2) {
+      throw new Error(`Country iso ${G.missingRequired.message}`);
+    }
+    if (!name || name.length < 2) {
+      throw new Error(`Country name ${G.missingRequired.message}`);
+    }
+    if (!tz) {
+      throw new Error(`Country timezone ${G.missingRequired.message}`);
+    }
+    if (!regex) {
+      throw new Error(`Country mobileRegex ${G.missingRequired.message}`);
+    }
   }
 }

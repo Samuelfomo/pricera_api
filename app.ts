@@ -8,11 +8,13 @@ import Country from './src/class/Country';
 class App {
   private server: any;
   private app: express.Application;
-  private port: number;
+  private readonly port: number;
+  private readonly countryModel: Country; // Instance globale
 
   constructor(port: number = 3000) {
     this.port = port;
     this.app = express();
+    this.countryModel = new Country(); // Instance partagée
     this.setupMiddleware();
     this.setupRoutes();
   }
@@ -20,6 +22,12 @@ class App {
   private setupMiddleware(): void {
     this.app.use(express.json());
     this.app.use(express.urlencoded({ extended: true }));
+
+    // Middleware pour injecter l'instance Country dans req
+    this.app.use((req: any, res, next) => {
+      req.countryModel = this.countryModel;
+      next();
+    });
   }
 
   private setupRoutes(): void {
@@ -35,20 +43,14 @@ class App {
 
   async start(): Promise<void> {
     try {
-      // // Initialiser la base de données
-      // console.log('🔌 Connecting to database...');
-      // const isConnected = await this.clientModel.isConnected();
-      // if (!isConnected) {
-      //   throw new Error('Database connection failed');
-      // }
       // Initialiser la connexion singleton
-      // await Db.initialize();
+      console.log('🔌 Connecting to database...');
+      await Db.getInstance();
       console.log('✅ Database connected');
 
-      // Initialiser les modèles
+      // Initialiser les modèles UNE SEULE FOIS
       console.log('📋 Initializing models...');
-      // const country = new Country();
-      // await country.init();
+      await this.countryModel.init();
       console.log('✅ Models initialized');
 
       // Démarrer le serveur
@@ -78,10 +80,6 @@ class App {
 
       try {
         console.log('💾 Closing database connection...');
-        // await this.clientModel.close();
-        // console.log('✅ Database connection closed');
-
-        // Fermer proprement la connexion singleton
         await Db.closeConnection();
         console.log('🔌 Connexion fermée proprement');
       } catch (error) {
